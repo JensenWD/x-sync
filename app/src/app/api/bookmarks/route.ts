@@ -88,8 +88,7 @@ export async function GET(req: NextRequest) {
   const folderIds = parseIdList(searchParams.get('folder_id'));
   const tagNames = parseStringList(searchParams.get('tag'));
   const untagged = searchParams.get('untagged') === '1';
-  const fromTs = parseInt(searchParams.get('from') || '', 10);
-  const toTs = parseInt(searchParams.get('to') || '', 10);
+  const rangeDays = parseInt(searchParams.get('range_days') || '', 10);
   const sort = searchParams.get('sort') || 'bookmarked_at_desc';
   const perPage = Math.min(parseInt(searchParams.get('per_page') || '40', 10), 100);
   const page = Math.max(parseInt(searchParams.get('page') || '1', 10), 1);
@@ -149,13 +148,9 @@ export async function GET(req: NextRequest) {
     conditions.push(`NOT EXISTS (SELECT 1 FROM bookmark_tags bt3 WHERE bt3.bookmark_id = b.id)`);
   }
 
-  if (Number.isFinite(fromTs) && fromTs > 0) {
-    conditions.push(`b.bookmarked_at >= ?`);
-    params.push(fromTs);
-  }
-  if (Number.isFinite(toTs) && toTs > 0) {
-    conditions.push(`b.bookmarked_at <= ?`);
-    params.push(toTs);
+  if (Number.isFinite(rangeDays) && rangeDays > 0) {
+    conditions.push(`b.bookmarked_at >= unixepoch() - ?`);
+    params.push(rangeDays * 24 * 60 * 60);
   }
 
   const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';

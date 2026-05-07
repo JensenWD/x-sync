@@ -5,11 +5,13 @@ import Image from 'next/image';
 import { formatDistanceToNow } from 'date-fns';
 import { ExternalLinkIcon, ArchiveIcon, HeartIcon, BookmarkIcon, BadgeCheckIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { FolderDropdown } from '@/components/folder/folder-dropdown';
 import { TagInput } from '@/components/tag/tag-input';
 import { ArchiveBookmarkDialog } from './archive-bookmark-dialog';
 import { useArchiveBookmark } from '@/hooks/use-bookmarks';
+import { useSelection } from './selection-context';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type { Bookmark } from '@/types';
@@ -110,6 +112,8 @@ interface BookmarkCardProps {
 export function BookmarkCard({ bookmark }: BookmarkCardProps) {
   const [archiveOpen, setArchiveOpen] = useState(false);
   const archiveBookmark = useArchiveBookmark();
+  const { isSelected, toggle, selectionMode } = useSelection();
+  const selected = isSelected(bookmark.id);
 
   const relativeTime = bookmark.bookmarked_at
     ? formatDistanceToNow(new Date(bookmark.bookmarked_at * 1000), { addSuffix: true })
@@ -117,18 +121,25 @@ export function BookmarkCard({ bookmark }: BookmarkCardProps) {
 
   const mediaUrls = bookmark.media_urls ?? [];
 
-  // Card-level activation: open the tweet on X. Skips when the user clicked an
-  // interactive child or is selecting text. onAuxClick handles middle-click so
-  // browsers' native "open in new tab" works on the entire card surface.
+  // Card-level activation: open the tweet on X, OR toggle selection while in
+  // selection mode. Skips when the user clicked an interactive child or is
+  // selecting text. onAuxClick handles middle-click so browsers' native "open
+  // in new tab" works on the entire card surface.
   function isInteractiveTarget(e: React.MouseEvent) {
     const target = e.target as HTMLElement | null;
-    return !!target?.closest('a, button, input, [role="checkbox"]');
+    return !!target?.closest(
+      'a, button, input, [role="checkbox"], [data-slot="checkbox"]',
+    );
   }
 
   function handleCardClick(e: React.MouseEvent) {
     if (e.defaultPrevented) return;
     if (isInteractiveTarget(e)) return;
     if (window.getSelection()?.toString()) return;
+    if (selectionMode) {
+      toggle(bookmark.id);
+      return;
+    }
     window.open(bookmark.tweet_url, '_blank', 'noopener,noreferrer');
   }
 
@@ -143,8 +154,30 @@ export function BookmarkCard({ bookmark }: BookmarkCardProps) {
     <Card
       onClick={handleCardClick}
       onAuxClick={handleCardAuxClick}
-      className="group relative gap-0 px-4 py-3 rounded-xl bg-card ring-1 ring-white/10 shadow-[0_4px_24px_rgba(0,0,0,0.55)] hover:ring-white/20 hover:shadow-[0_6px_30px_rgba(0,0,0,0.65)] transition-all duration-200 cursor-pointer"
+      data-selected={selected ? 'true' : undefined}
+      className={cn(
+        'group relative gap-0 px-4 py-3 rounded-xl bg-card shadow-[0_4px_24px_rgba(0,0,0,0.55)] hover:shadow-[0_6px_30px_rgba(0,0,0,0.65)] transition-all duration-200 cursor-pointer',
+        selected
+          ? 'ring-2 ring-[#1d9bf0] bg-[#1d9bf0]/[0.06]'
+          : 'ring-1 ring-white/10 hover:ring-white/20',
+      )}
     >
+      {/* Selection checkbox — visible on hover or when selection mode is active */}
+      <div
+        className={cn(
+          'absolute top-2 right-2 z-20 transition-opacity',
+          selected || selectionMode
+            ? 'opacity-100'
+            : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100',
+        )}
+      >
+        <Checkbox
+          checked={selected}
+          onCheckedChange={() => toggle(bookmark.id)}
+          aria-label={selected ? 'Deselect bookmark' : 'Select bookmark'}
+          className="bg-card/80 backdrop-blur-sm border-white/30"
+        />
+      </div>
       <div className="flex gap-3">
         {/* Avatar column */}
         <div className="flex flex-col items-center shrink-0">

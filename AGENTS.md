@@ -95,8 +95,34 @@ Content scripts re-inject on every navigation. Use an `__xSyncInterceptInstalled
 ### API routes
 
 - `POST /api/x/sync` — accepts `{ bookmarks: [...] }`, upserts into DB
-- `GET /api/bookmarks` — paginated, filterable, sortable bookmark list with folder/tag joins
+- `GET /api/bookmarks` — paginated, filterable, sortable bookmark list with folder/tag joins (see "URL filter contract")
+- `POST /api/bookmarks/bulk` — single endpoint for all multi-bookmark mutations. Body is `{ ids: number[], action, ... }` where `action` is the discriminator: `'archive' | 'add_tags' | 'add_folders'` (extra payload: `tags: string[]` or `folder_ids: number[]`). All branches run inside a `rawDb.transaction()` and return `{ ok: true, added | archived }` counts. React Query wrappers: `useBulkArchive`, `useBulkAddTags`, `useBulkAddFolders` in `use-bookmarks.ts`.
 - CRUD routes for folders, tags, bookmark-tag/folder associations
+- `GET /api/sync/status` returns `{ in_progress, last_synced_at, total_bookmarks, untagged_count, last_error }`. Both counts are restricted to non-archived bookmarks; `untagged_count` is bookmarks with zero rows in `bookmark_tags`.
+
+### URL filter contract
+
+The bookmark list is driven entirely by URL search params — sidebar, toolbar, and chips all read/write the same params so reloads and shares preserve state.
+
+- `folder_id` and `tag` are **comma-separated lists** (e.g. `?folder_id=1,3&tag=ai,research`). Use `parseList`/`parseIdList` (defined in both `bookmark-grid.tsx` and `sidebar.tsx`) to read them.
+- Semantics: `folder_id` is **any-of** (bookmark in ANY listed folder matches); `tag` is **all-of** (bookmark must have EVERY listed tag — implemented as a `COUNT(DISTINCT name) = N` subquery).
+- `untagged=1` filters to bookmarks with no tags. Sidebar treats `untagged`, `folder_id`, and `tag` as mutually exclusive — selecting one clears the others.
+- Date range: the URL uses `range` with an id (`1d`, `7d`, `30d`, `90d`, `365d`, or absent for "all time"). The grid resolves the id against the `DATE_RANGES` table and passes `range_days` (integer day count) to the API. The API only accepts `range_days`; do not introduce raw timestamp params.
+- Sidebar multi-select: cmd/ctrl-click on a folder or tag toggles it in the list; plain click replaces the current selection (or clears it if it was already the only entry).
+
+### Selection model
+
+- `SelectionProvider` (`bookmark/selection-context.tsx`) wraps the grid in `BookmarkGrid`. Any descendant calls `useSelection()` to read/mutate the selection set — do not lift this state higher or duplicate it.
+- `selectionMode` is **derived** (`selectedIds.size > 0`); never set it independently. `BulkActionBar` simply returns `null` when size is 0.
+- Grid clears selection on any filter change (search, folders, tags, untagged, range, sort) and on Escape — selected ids may not exist in the new result set.
+
+### Card click semantics
+
+`BookmarkCard` is a clickable surface:
+
+- In `selectionMode`, card click toggles selection. Otherwise it opens the tweet on x.com — left click via `onClick`, middle click via `onAuxClick` (so browsers' native "open in new tab" works on the whole card).
+- Card activation is suppressed when (a) the user clicked an interactive child or (b) `window.getSelection()` has non-empty text (so users can highlight tweet copy).
+- "Interactive child" is detected by `closest('a, button, input, [role="checkbox"], [data-slot="checkbox"]')`. New interactive controls inside a card must either match that selector or call `e.stopPropagation()` on their handler. Wrapper rows that contain multiple controls (folder chips, engagement metrics, manage buttons) put `onClick={(e) => e.stopPropagation()}` on the row itself.
 
 ## Things to avoid
 

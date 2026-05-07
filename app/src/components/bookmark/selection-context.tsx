@@ -23,20 +23,15 @@ const SelectionContext = createContext<SelectionContextValue | null>(null);
 
 export function SelectionProvider({ children }: { children: ReactNode }) {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set());
-  const [lastToggledId, setLastToggledId] = useState<number | null>(null);
 
-  const toggle = useCallback(
-    (id: number) => {
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        if (next.has(id)) next.delete(id);
-        else next.add(id);
-        return next;
-      });
-      setLastToggledId(id);
-    },
-    [],
-  );
+  const toggle = useCallback((id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
 
   const selectMany = useCallback((ids: number[]) => {
     setSelectedIds((prev) => {
@@ -48,7 +43,6 @@ export function SelectionProvider({ children }: { children: ReactNode }) {
 
   const clear = useCallback(() => {
     setSelectedIds(new Set());
-    setLastToggledId(null);
   }, []);
 
   const value = useMemo<SelectionContextValue>(
@@ -61,9 +55,7 @@ export function SelectionProvider({ children }: { children: ReactNode }) {
       clear,
       size: selectedIds.size,
     }),
-    // lastToggledId is intentionally captured so selection consumers stay reactive
-    // when the same id is re-toggled in succession.
-    [selectedIds, toggle, selectMany, clear, lastToggledId],
+    [selectedIds, toggle, selectMany, clear],
   );
 
   return <SelectionContext.Provider value={value}>{children}</SelectionContext.Provider>;

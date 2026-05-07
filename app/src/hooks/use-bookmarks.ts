@@ -6,8 +6,7 @@ export interface BookmarkFilters {
   folder_ids?: number[];
   tag_names?: string[];
   untagged?: boolean;
-  from_ts?: number | null;
-  to_ts?: number | null;
+  range_days?: number | null;
   sort?: string;
   per_page?: number;
 }
@@ -23,8 +22,7 @@ export function useBookmarks(filters: BookmarkFilters = {}) {
       params.set('tag', filters.tag_names.join(','));
     }
     if (filters.untagged) params.set('untagged', '1');
-    if (filters.from_ts) params.set('from', String(filters.from_ts));
-    if (filters.to_ts) params.set('to', String(filters.to_ts));
+    if (filters.range_days) params.set('range_days', String(filters.range_days));
     if (filters.sort) params.set('sort', filters.sort);
     params.set('per_page', String(filters.per_page ?? 40));
     params.set('page', String(page));
@@ -103,17 +101,17 @@ export function useAutoTag() {
   });
 }
 
-interface BulkParamsBase {
+interface BulkArchiveParams {
   ids: number[];
 }
 
-interface BulkArchiveParams extends BulkParamsBase {}
-
-interface BulkTagParams extends BulkParamsBase {
+interface BulkTagParams {
+  ids: number[];
   tags: string[];
 }
 
-interface BulkFolderParams extends BulkParamsBase {
+interface BulkFolderParams {
+  ids: number[];
   folder_ids: number[];
 }
 

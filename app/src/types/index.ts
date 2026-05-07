@@ -26,9 +26,17 @@ export interface Bookmark {
   author_name: string;
   author_handle: string;
   author_avatar: string | null;
+  author_verified: boolean;
   tweet_url: string;
   media_urls: string[];
   quoted_tweet: QuotedTweet | null;
+  like_count: number;
+  retweet_count: number;
+  reply_count: number;
+  quote_count: number;
+  view_count: number | null;
+  bookmark_count: number | null;
+  lang: string | null;
   bookmarked_at: number | null;
   folders: Folder[];
   tags: Tag[];

@@ -44,35 +44,58 @@ function updateLastSynced() {
 
 updateLastSynced();
 
+// Check if a sync is already in progress when popup opens
+chrome.runtime.sendMessage({ type: 'GET_SYNC_STATE' }, (state) => {
+  if (state?.active) {
+    setLoading(true);
+    setStatus(`Scrolling bookmarks… found ${state.count} so far`, 'info');
+  }
+});
+
+// Listen for progress updates from background
+chrome.runtime.onMessage.addListener((message) => {
+  if (message.type === 'SYNC_PROGRESS') {
+    setLoading(true);
+    setStatus(`Scrolling bookmarks… found ${message.count} so far`, 'info');
+  }
+
+  if (message.type === 'SYNC_SAVING') {
+    setStatus('Saving to dashboard…', 'info');
+  }
+
+  if (message.type === 'SYNC_COMPLETE') {
+    setLoading(false);
+    const now = Date.now();
+    chrome.storage.local.set({ lastSyncAt: now });
+    lastSyncedEl.textContent = 'Last synced: just now';
+    const count = message.synced_count ?? 0;
+    setStatus(`Synced ${count} bookmarks — open the dashboard to browse`, 'success');
+  }
+
+  if (message.type === 'SYNC_FAILED') {
+    setLoading(false);
+    setStatus(message.error || 'Unknown error', 'error');
+  }
+});
+
 btn.addEventListener('click', () => {
+  if (!chrome.runtime?.id) {
+    setStatus('Extension context lost — please reload from chrome://extensions.', 'error');
+    return;
+  }
+
   setLoading(true);
-  setStatus('Connecting to dashboard…', 'info');
+  setStatus('Opening bookmarks page…', 'info');
 
   chrome.runtime.sendMessage({ type: 'SYNC_BOOKMARKS' }, (response) => {
-    setLoading(false);
-
     if (chrome.runtime.lastError) {
-      setStatus('✗ Extension error: ' + chrome.runtime.lastError.message, 'error');
+      setLoading(false);
+      setStatus('Extension error: ' + chrome.runtime.lastError.message, 'error');
       return;
     }
 
-    if (!response) {
-      setStatus('✗ No response — try reloading the extension.', 'error');
-      return;
-    }
-
-    if (response.success) {
-      const now = Date.now();
-      chrome.storage.local.set({ lastSyncAt: now });
-      lastSyncedEl.textContent = 'Last synced: just now';
-
-      if (response.alreadyRunning) {
-        setStatus('↺ Already syncing — check the dashboard', 'info');
-      } else {
-        setStatus('✓ Done! Open the dashboard to browse', 'success');
-      }
-    } else {
-      setStatus('✗ ' + (response.error || 'Unknown error'), 'error');
+    if (response?.status === 'already_running') {
+      setStatus('Already syncing — scroll is in progress', 'info');
     }
   });
 });

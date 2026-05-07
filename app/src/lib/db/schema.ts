@@ -26,9 +26,17 @@ export const bookmarks = sqliteTable('bookmarks', {
   authorName: text('author_name').notNull().default(''),
   authorHandle: text('author_handle').notNull().default(''),
   authorAvatar: text('author_avatar'),
+  authorVerified: integer('author_verified', { mode: 'boolean' }).default(false),
   tweetUrl: text('tweet_url').notNull().default(''),
   mediaUrls: text('media_urls'), // JSON array
   quotedTweet: text('quoted_tweet'), // JSON object
+  likeCount: integer('like_count').default(0),
+  retweetCount: integer('retweet_count').default(0),
+  replyCount: integer('reply_count').default(0),
+  quoteCount: integer('quote_count').default(0),
+  viewCount: integer('view_count'),
+  bookmarkCount: integer('bookmark_count'),
+  lang: text('lang'),
   bookmarkedAt: integer('bookmarked_at'), // Unix timestamp
   syncedAt: integer('synced_at'), // Unix timestamp
   ...timestamps,

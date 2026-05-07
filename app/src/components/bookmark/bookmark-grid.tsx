@@ -71,145 +71,157 @@ export function BookmarkGrid() {
   return (
     <div className="flex-1 flex flex-col min-h-0">
       {/* Toolbar */}
-      <div className="sticky top-0 z-10 bg-background border-b border-border px-6 py-3 space-y-2">
-        <div className="flex items-center gap-3">
-          {/* Search */}
-          <div className="flex-1 relative">
-            <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-            <Input
-              value={searchInput}
-              onChange={(e) => updateSearch(e.target.value)}
-              placeholder="Search bookmarks…"
-              className="pl-9 h-8 text-sm bg-secondary border-transparent focus:border-[#1d9bf0] font-mono"
-            />
-            {searchInput && (
-              <button
-                onClick={() => updateSearch('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-text-primary"
-              >
-                <XIcon className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
+      <div className="sticky top-0 z-10 bg-background/80 backdrop-blur-md">
+        <div className="max-w-[600px] mx-auto border-x border-[var(--card-border)]">
+          <div className="px-4 py-3 space-y-2">
+            <div className="flex items-center gap-3">
+              {/* Search */}
+              <div className="flex-1 relative">
+                <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-secondary)]" />
+                <Input
+                  value={searchInput}
+                  onChange={(e) => updateSearch(e.target.value)}
+                  placeholder="Search bookmarks"
+                  className="pl-10 h-[42px] text-[15px] bg-[#202327] border-transparent rounded-full focus:border-[#1d9bf0] focus:bg-transparent"
+                />
+                {searchInput && (
+                  <button
+                    onClick={() => updateSearch('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-[#1d9bf0] flex items-center justify-center hover:bg-[#1a8cd8]"
+                  >
+                    <XIcon className="w-3 h-3 text-white" />
+                  </button>
+                )}
+              </div>
 
-          {/* Sort */}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md border border-border text-text-secondary text-xs bg-transparent hover:bg-secondary transition-colors"
-            >
-              <SlidersHorizontalIcon className="w-3.5 h-3.5" />
-              {SORT_LABELS[sort]}
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="bg-popover border-border">
-              {Object.entries(SORT_LABELS).map(([value, label]) => (
-                <DropdownMenuItem
-                  key={value}
-                  onClick={() => setParam('sort', value)}
-                  className={`text-sm cursor-pointer ${sort === value ? 'text-[#1d9bf0]' : 'text-text-primary'}`}
+              {/* Sort */}
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  className="inline-flex items-center gap-1.5 h-9 px-3 rounded-full border border-[var(--card-border)] text-[var(--text-secondary)] text-[13px] bg-transparent hover:bg-[#1a1a1a] transition-colors shrink-0"
                 >
-                  {label}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-
-        {/* Active filter chips */}
-        {(folderId || activeTag || debouncedSearch) && (
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {debouncedSearch && (
-              <Badge
-                variant="secondary"
-                className="text-xs gap-1 cursor-pointer hover:bg-muted"
-                onClick={() => updateSearch('')}
-              >
-                &ldquo;{debouncedSearch}&rdquo;
-                <XIcon className="w-3 h-3" />
-              </Badge>
-            )}
-            {folderId && (
-              <Badge
-                variant="secondary"
-                className="text-xs gap-1 cursor-pointer hover:bg-muted"
-                onClick={() => setParam('folder_id', null)}
-              >
-                Folder
-                <XIcon className="w-3 h-3" />
-              </Badge>
-            )}
-            {activeTag && (
-              <Badge
-                variant="secondary"
-                className="text-xs gap-1 cursor-pointer hover:bg-muted"
-                onClick={() => setParam('tag', null)}
-              >
-                #{activeTag}
-                <XIcon className="w-3 h-3" />
-              </Badge>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Grid */}
-      <div className="flex-1 overflow-y-auto px-6 py-5">
-        {isLoading ? (
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <Skeleton key={i} className="h-40 w-full rounded-lg bg-card" />
-            ))}
-          </div>
-        ) : bookmarks.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-64 text-center">
-            <BookmarkXIcon className="w-10 h-10 text-muted-foreground mb-3" />
-            <p className="text-text-secondary text-sm">
-              {debouncedSearch || folderId || activeTag
-                ? 'No bookmarks match your filters'
-                : 'No bookmarks yet — sync from the extension'}
-            </p>
-          </div>
-        ) : (
-          <>
-            <div
-              className={`grid gap-4 grid-cols-1 xl:grid-cols-2 ${
-                isFetching ? 'opacity-75 transition-opacity' : ''
-              }`}
-            >
-              {bookmarks.map((bookmark) => (
-                <BookmarkCard key={bookmark.id} bookmark={bookmark} />
-              ))}
+                  <SlidersHorizontalIcon className="w-4 h-4" />
+                  {SORT_LABELS[sort]}
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="bg-[#1a1a1a] border-[var(--card-border)] rounded-xl">
+                  {Object.entries(SORT_LABELS).map(([value, label]) => (
+                    <DropdownMenuItem
+                      key={value}
+                      onClick={() => setParam('sort', value)}
+                      className={`text-[15px] cursor-pointer ${sort === value ? 'text-[#1d9bf0]' : 'text-[var(--text-primary)]'}`}
+                    >
+                      {label}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
 
-            {/* Pagination */}
-            {meta && meta.last_page > 1 && (
-              <div className="flex items-center justify-between mt-6 pt-4 border-t border-border">
-                <span className="text-xs font-mono text-muted-foreground">
-                  Page {meta.current_page} of {meta.last_page} · {meta.total} bookmarks
-                </span>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-xs border-border"
-                    disabled={meta.current_page <= 1}
-                    onClick={() => setParam('page', String(meta.current_page - 1))}
+            {/* Active filter chips */}
+            {(folderId || activeTag || debouncedSearch) && (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {debouncedSearch && (
+                  <Badge
+                    variant="secondary"
+                    className="text-[13px] gap-1.5 cursor-pointer hover:bg-[#2a2a2a] rounded-full px-3 py-1"
+                    onClick={() => updateSearch('')}
                   >
-                    Prev
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-xs border-border"
-                    disabled={meta.current_page >= meta.last_page}
-                    onClick={() => setParam('page', String(meta.current_page + 1))}
+                    &ldquo;{debouncedSearch}&rdquo;
+                    <XIcon className="w-3.5 h-3.5" />
+                  </Badge>
+                )}
+                {folderId && (
+                  <Badge
+                    variant="secondary"
+                    className="text-[13px] gap-1.5 cursor-pointer hover:bg-[#2a2a2a] rounded-full px-3 py-1"
+                    onClick={() => setParam('folder_id', null)}
                   >
-                    Next
-                  </Button>
-                </div>
+                    Folder
+                    <XIcon className="w-3.5 h-3.5" />
+                  </Badge>
+                )}
+                {activeTag && (
+                  <Badge
+                    variant="secondary"
+                    className="text-[13px] gap-1.5 cursor-pointer hover:bg-[#2a2a2a] rounded-full px-3 py-1"
+                    onClick={() => setParam('tag', null)}
+                  >
+                    #{activeTag}
+                    <XIcon className="w-3.5 h-3.5" />
+                  </Badge>
+                )}
               </div>
             )}
-          </>
-        )}
+          </div>
+          <div className="border-b border-[var(--card-border)]" />
+        </div>
+      </div>
+
+      {/* Timeline */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-[600px] mx-auto border-x border-[var(--card-border)]">
+          {isLoading ? (
+            <div className="space-y-0">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="px-4 py-3 border-b border-[var(--card-border)]">
+                  <div className="flex gap-3">
+                    <Skeleton className="w-10 h-10 rounded-full bg-[#1a1a1a]" />
+                    <div className="flex-1 space-y-2">
+                      <Skeleton className="h-4 w-48 bg-[#1a1a1a]" />
+                      <Skeleton className="h-3 w-full bg-[#1a1a1a]" />
+                      <Skeleton className="h-3 w-3/4 bg-[#1a1a1a]" />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : bookmarks.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-64 text-center">
+              <BookmarkXIcon className="w-10 h-10 text-muted-foreground mb-3" />
+              <p className="text-[var(--text-secondary)] text-[15px]">
+                {debouncedSearch || folderId || activeTag
+                  ? 'No bookmarks match your filters'
+                  : 'No bookmarks yet — sync from the extension'}
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className={isFetching ? 'opacity-75 transition-opacity' : ''}>
+                {bookmarks.map((bookmark) => (
+                  <BookmarkCard key={bookmark.id} bookmark={bookmark} />
+                ))}
+              </div>
+
+              {/* Pagination */}
+              {meta && meta.last_page > 1 && (
+                <div className="flex items-center justify-between px-4 py-3 border-t border-[var(--card-border)]">
+                  <span className="text-[13px] text-[var(--text-secondary)]">
+                    Page {meta.current_page} of {meta.last_page} · {meta.total} bookmarks
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-[13px] border-[var(--card-border)] rounded-full px-4"
+                      disabled={meta.current_page <= 1}
+                      onClick={() => setParam('page', String(meta.current_page - 1))}
+                    >
+                      Prev
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-[13px] border-[var(--card-border)] rounded-full px-4"
+                      disabled={meta.current_page >= meta.last_page}
+                      onClick={() => setParam('page', String(meta.current_page + 1))}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

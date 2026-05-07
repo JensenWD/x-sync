@@ -8,9 +8,17 @@ interface BookmarkRow {
   author_name: string;
   author_handle: string;
   author_avatar: string | null;
+  author_verified: number;
   tweet_url: string;
   media_urls: string | null;
   quoted_tweet: string | null;
+  like_count: number;
+  retweet_count: number;
+  reply_count: number;
+  quote_count: number;
+  view_count: number | null;
+  bookmark_count: number | null;
+  lang: string | null;
   bookmarked_at: number | null;
   created_at: number;
   folders_json: string;
@@ -25,9 +33,17 @@ function parseBookmark(row: BookmarkRow) {
     author_name: row.author_name,
     author_handle: row.author_handle,
     author_avatar: row.author_avatar,
+    author_verified: !!row.author_verified,
     tweet_url: row.tweet_url,
     media_urls: row.media_urls ? JSON.parse(row.media_urls) : [],
     quoted_tweet: row.quoted_tweet ? JSON.parse(row.quoted_tweet) : null,
+    like_count: row.like_count ?? 0,
+    retweet_count: row.retweet_count ?? 0,
+    reply_count: row.reply_count ?? 0,
+    quote_count: row.quote_count ?? 0,
+    view_count: row.view_count,
+    bookmark_count: row.bookmark_count,
+    lang: row.lang,
     bookmarked_at: row.bookmarked_at,
     folders: JSON.parse(row.folders_json || '[]'),
     tags: JSON.parse(row.tags_json || '[]'),
@@ -37,7 +53,9 @@ function parseBookmark(row: BookmarkRow) {
 const BASE_SELECT = `
   SELECT
     b.id, b.tweet_id, b.full_text, b.author_name, b.author_handle,
-    b.author_avatar, b.tweet_url, b.media_urls, b.quoted_tweet, b.bookmarked_at,
+    b.author_avatar, b.author_verified, b.tweet_url, b.media_urls, b.quoted_tweet,
+    b.like_count, b.retweet_count, b.reply_count, b.quote_count,
+    b.view_count, b.bookmark_count, b.lang, b.bookmarked_at,
     b.created_at,
     COALESCE(json_group_array(
       CASE WHEN f.id IS NOT NULL THEN json_object('id', f.id, 'name', f.name, 'color', f.color) END

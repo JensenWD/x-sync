@@ -1,83 +1,142 @@
 const DASHBOARD_URL = 'http://localhost:3000';
-const X_DOMAINS = ['x.com', 'twitter.com'];
+const BOOKMARKS_URL = 'https://x.com/i/bookmarks';
+const BATCH_SIZE = 200;
 
-async function getAllCookies(domain) {
+let syncActive = false;
+let collectedBookmarks = [];
+
+async function sendToDashboard(bookmarks) {
+  let totalSynced = 0;
+  for (let i = 0; i < bookmarks.length; i += BATCH_SIZE) {
+    const batch = bookmarks.slice(i, i + BATCH_SIZE);
+    const res = await fetch(`${DASHBOARD_URL}/api/x/sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bookmarks: batch }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `Dashboard error (${res.status})`);
+    }
+    const data = await res.json();
+    totalSynced += data.synced_count ?? batch.length;
+  }
+  return totalSynced;
+}
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'BOOKMARK') {
+    if (syncActive) {
+      collectedBookmarks.push(message.bookmark);
+      // Broadcast progress to popup (small message, just a number)
+      chrome.runtime.sendMessage({
+        type: 'SYNC_PROGRESS',
+        count: collectedBookmarks.length,
+      }).catch(() => {});
+    }
+    return false;
+  }
+
+  if (message.type === 'SCROLL_COMPLETE') {
+    handleScrollComplete();
+    return false;
+  }
+
+  if (message.type === 'SYNC_BOOKMARKS') {
+    if (syncActive) {
+      sendResponse({ status: 'already_running' });
+      return false;
+    }
+    startSync();
+    sendResponse({ status: 'started' });
+    return false;
+  }
+
+  if (message.type === 'GET_SYNC_STATE') {
+    sendResponse({ active: syncActive, count: collectedBookmarks.length });
+    return false;
+  }
+});
+
+async function openBookmarksTab() {
+  const existing = await chrome.tabs.query({ url: 'https://x.com/i/bookmarks*' });
+  if (existing.length > 0) {
+    await chrome.tabs.update(existing[0].id, { active: true });
+    await chrome.tabs.reload(existing[0].id);
+    return existing[0].id;
+  }
+
+  const xTabs = await chrome.tabs.query({ url: 'https://x.com/*' });
+  if (xTabs.length > 0) {
+    await chrome.tabs.update(xTabs[0].id, { active: true, url: BOOKMARKS_URL });
+    return xTabs[0].id;
+  }
+
+  const tab = await chrome.tabs.create({ url: BOOKMARKS_URL });
+  return tab.id;
+}
+
+function waitForTabLoad(tabId) {
   return new Promise((resolve) => {
-    chrome.cookies.getAll({ domain }, (cookies) => resolve(cookies || []));
+    function listener(id, info) {
+      if (id === tabId && info.status === 'complete') {
+        chrome.tabs.onUpdated.removeListener(listener);
+        resolve();
+      }
+    }
+    chrome.tabs.onUpdated.addListener(listener);
   });
 }
 
-async function getXCookies() {
-  for (const domain of X_DOMAINS) {
-    const all = await getAllCookies(domain);
-    console.log(
-      `[x-sync] cookies for ${domain}:`,
-      all.map((c) => ({ name: c.name, domain: c.domain, httpOnly: c.httpOnly, len: c.value.length })),
-    );
-    const authToken = all.find((c) => c.name === 'auth_token')?.value ?? null;
-    const ct0 = all.find((c) => c.name === 'ct0')?.value ?? null;
-    if (authToken && ct0) {
-      return { auth_token: authToken, ct0, source_domain: domain };
-    }
+async function startSync() {
+  syncActive = true;
+  collectedBookmarks = [];
+  chrome.runtime.sendMessage({ type: 'SYNC_PROGRESS', count: 0 }).catch(() => {});
+
+  try {
+    const tabId = await openBookmarksTab();
+    await waitForTabLoad(tabId);
+    await new Promise((r) => setTimeout(r, 3000));
+
+    chrome.tabs.sendMessage(tabId, { type: 'START_SCROLL' }, (response) => {
+      if (chrome.runtime.lastError) {
+        syncActive = false;
+        chrome.runtime.sendMessage({
+          type: 'SYNC_FAILED',
+          error: 'Could not start scrolling. Make sure you are logged into x.com.',
+        }).catch(() => {});
+      }
+    });
+  } catch (err) {
+    syncActive = false;
+    chrome.runtime.sendMessage({
+      type: 'SYNC_FAILED',
+      error: err instanceof Error ? err.message : String(err),
+    }).catch(() => {});
   }
-  return null;
 }
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message.type !== 'SYNC_BOOKMARKS') return false;
+async function handleScrollComplete() {
+  if (!syncActive) return;
 
-  // Return true to keep the message channel open for async sendResponse
-  (async () => {
-    try {
-      const cookies = await getXCookies();
-      if (!cookies) {
-        sendResponse({
-          success: false,
-          error: 'Could not find X session cookies. Make sure you are logged into x.com.',
-        });
-        return;
-      }
+  const bookmarks = collectedBookmarks;
+  if (bookmarks.length === 0) {
+    syncActive = false;
+    chrome.runtime.sendMessage({ type: 'SYNC_COMPLETE', synced_count: 0 }).catch(() => {});
+    return;
+  }
 
-      const res = await fetch(`${DASHBOARD_URL}/api/x/sync`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(cookies),
-      });
-
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        if (res.status === 403 || res.status === 401) {
-          sendResponse({
-            success: false,
-            error: 'Session expired. Please log into X and try again.',
-          });
-        } else {
-          sendResponse({
-            success: false,
-            error: body.error || `Server error (${res.status})`,
-          });
-        }
-        return;
-      }
-
-      const data = await res.json();
-      if (data.status === 'already_running') {
-        sendResponse({ success: true, alreadyRunning: true });
-      } else {
-        sendResponse({ success: true, synced_count: data.synced_count });
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      if (message.includes('fetch') || message.includes('network') || message.includes('Failed')) {
-        sendResponse({
-          success: false,
-          error: 'Cannot reach the dashboard. Make sure the Next.js app is running on localhost:3000.',
-        });
-      } else {
-        sendResponse({ success: false, error: message });
-      }
-    }
-  })();
-
-  return true; // keep channel open
-});
+  try {
+    chrome.runtime.sendMessage({ type: 'SYNC_SAVING' }).catch(() => {});
+    const synced_count = await sendToDashboard(bookmarks);
+    chrome.runtime.sendMessage({ type: 'SYNC_COMPLETE', synced_count }).catch(() => {});
+  } catch (err) {
+    chrome.runtime.sendMessage({
+      type: 'SYNC_FAILED',
+      error: err instanceof Error ? err.message : String(err),
+    }).catch(() => {});
+  } finally {
+    syncActive = false;
+    collectedBookmarks = [];
+  }
+}

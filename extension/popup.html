@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>X Bookmark Sync</title>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+
+      body {
+        width: 300px;
+        background: #0f0f0f;
+        color: #e7e9ea;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        font-size: 14px;
+        padding: 16px;
+      }
+
+      .header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+
+      .logo {
+        width: 24px;
+        height: 24px;
+        background: #1d9bf0;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+      }
+
+      .logo svg { width: 14px; height: 14px; fill: white; }
+
+      .title { font-weight: 700; font-size: 15px; color: #e7e9ea; }
+      .subtitle { font-size: 12px; color: #71767b; margin-top: 2px; }
+
+      #sync-btn {
+        width: 100%;
+        padding: 10px 16px;
+        background: #1d9bf0;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        transition: background 0.15s;
+        min-height: 40px;
+      }
+
+      #sync-btn:hover:not(:disabled) { background: #1a8cd8; }
+      #sync-btn:disabled { opacity: 0.65; cursor: not-allowed; }
+
+      #btn-text {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .spinner {
+        display: inline-block;
+        width: 14px;
+        height: 14px;
+        border: 2px solid rgba(255,255,255,0.35);
+        border-top-color: white;
+        border-radius: 50%;
+        animation: spin 0.7s linear infinite;
+        flex-shrink: 0;
+      }
+
+      @keyframes spin { to { transform: rotate(360deg); } }
+
+      #status {
+        margin-top: 10px;
+        font-size: 13px;
+        min-height: 20px;
+        line-height: 1.5;
+        border-radius: 6px;
+        padding: 8px 10px;
+        display: none;
+        font-weight: 500;
+      }
+
+      #status.idle    { display: none; }
+      #status.info    { display: block; color: #60b8f7; background: rgba(29,155,240,0.12); }
+      #status.success { display: block; color: #3dcf8e; background: rgba(0,186,124,0.12); }
+      #status.error   { display: block; color: #f87171; background: rgba(250,57,57,0.12); }
+
+      .meta {
+        margin-top: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      #last-synced {
+        font-size: 11px;
+        color: #71767b;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .open-link {
+        font-size: 11px;
+        color: #71767b;
+        text-decoration: none;
+        border: 1px solid #2a2a2a;
+        border-radius: 4px;
+        padding: 3px 8px;
+        transition: color 0.15s, border-color 0.15s;
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+      .open-link:hover { color: #1d9bf0; border-color: #1d9bf0; }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <div class="logo">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M17 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm-3 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/>
+        </svg>
+      </div>
+      <div>
+        <div class="title">X Bookmark Sync</div>
+        <div class="subtitle">Syncs to your local dashboard</div>
+      </div>
+    </div>
+
+    <button id="sync-btn">
+      <span id="btn-text">Sync Bookmarks</span>
+    </button>
+
+    <div id="status" class="idle"></div>
+
+    <div class="meta">
+      <span id="last-synced"></span>
+      <a href="http://localhost:3000" target="_blank" class="open-link">Open dashboard ↗</a>
+    </div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

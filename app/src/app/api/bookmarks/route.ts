@@ -57,17 +57,13 @@ const BASE_SELECT = `
     b.like_count, b.retweet_count, b.reply_count, b.quote_count,
     b.view_count, b.bookmark_count, b.lang, b.bookmarked_at,
     b.created_at,
-    COALESCE(json_group_array(
-      CASE WHEN f.id IS NOT NULL THEN json_object('id', f.id, 'name', f.name, 'color', f.color) END
-    ) FILTER (WHERE f.id IS NOT NULL), '[]') AS folders_json,
-    COALESCE(json_group_array(
-      CASE WHEN t.id IS NOT NULL THEN json_object('id', t.id, 'name', t.name, 'source', bt.source) END
-    ) FILTER (WHERE t.id IS NOT NULL), '[]') AS tags_json
+    (SELECT COALESCE(json_group_array(json_object('id', f.id, 'name', f.name, 'color', f.color)), '[]')
+     FROM bookmark_folders bf JOIN folders f ON f.id = bf.folder_id
+     WHERE bf.bookmark_id = b.id) AS folders_json,
+    (SELECT COALESCE(json_group_array(json_object('id', t.id, 'name', t.name, 'source', bt.source)), '[]')
+     FROM bookmark_tags bt JOIN tags t ON t.id = bt.tag_id
+     WHERE bt.bookmark_id = b.id) AS tags_json
   FROM bookmarks b
-  LEFT JOIN bookmark_folders bf ON bf.bookmark_id = b.id
-  LEFT JOIN folders f ON f.id = bf.folder_id
-  LEFT JOIN bookmark_tags bt ON bt.bookmark_id = b.id
-  LEFT JOIN tags t ON t.id = bt.tag_id
 `;
 
 export async function GET(req: NextRequest) {
@@ -84,17 +80,34 @@ export async function GET(req: NextRequest) {
   const params: (string | number)[] = [];
 
   if (search) {
-    // Use FTS5 to find matching IDs, then filter main query
-    const ftsQuery = search
+    // FTS5 prefix search per token. Wrap each token as a quoted phrase so:
+    //   - non-ASCII chars survive (porter unicode61 tokenizer handles them)
+    //   - reserved tokens (AND/OR/NOT/NEAR) are treated as literals
+    //   - punctuation in the user input doesn't break the parser
+    // Embedded `"` is escaped per FTS5 rules by doubling.
+    const tokens = search
       .split(/\s+/)
+      .map((w) => w.trim())
       .filter(Boolean)
-      .map((w) => `${w.replace(/[^a-zA-Z0-9]/g, '')}*`)
-      .join(' ');
-    const ftsRows = rawDb
-      .prepare(
-        `SELECT rowid FROM bookmarks_fts WHERE bookmarks_fts MATCH ? ORDER BY rank LIMIT 500`,
-      )
-      .all(ftsQuery) as { rowid: number }[];
+      .map((w) => `"${w.replace(/"/g, '""')}"*`);
+    if (tokens.length === 0) {
+      return Response.json({
+        data: [],
+        meta: { total: 0, per_page: perPage, current_page: page, last_page: 1 },
+      });
+    }
+    const ftsQuery = tokens.join(' ');
+    let ftsRows: { rowid: number }[] = [];
+    try {
+      ftsRows = rawDb
+        .prepare(
+          `SELECT rowid FROM bookmarks_fts WHERE bookmarks_fts MATCH ? ORDER BY rank LIMIT 500`,
+        )
+        .all(ftsQuery) as { rowid: number }[];
+    } catch {
+      // Pathological query that FTS5 still rejects — return no results.
+      ftsRows = [];
+    }
     if (ftsRows.length === 0) {
       return Response.json({
         data: [],
@@ -120,18 +133,21 @@ export async function GET(req: NextRequest) {
   const sortMap: Record<string, string> = {
     bookmarked_at_desc: 'b.bookmarked_at DESC NULLS LAST, b.id DESC',
     bookmarked_at_asc: 'b.bookmarked_at ASC NULLS LAST, b.id ASC',
+    like_count_desc: 'b.like_count DESC NULLS LAST, b.id DESC',
     author_asc: 'b.author_handle ASC, b.id DESC',
   };
   const orderBy = sortMap[sort] || sortMap.bookmarked_at_desc;
 
-  const countSql = `SELECT COUNT(DISTINCT b.id) as cnt FROM bookmarks b ${whereClause}`;
+  // No DISTINCT / GROUP BY needed: BASE_SELECT only joins on `bookmarks` itself
+  // (folder/tag aggregation happens inside correlated subqueries), so each row
+  // is already unique per b.id.
+  const countSql = `SELECT COUNT(*) as cnt FROM bookmarks b ${whereClause}`;
   const totalRow = rawDb.prepare(countSql).get(...params) as { cnt: number };
   const total = totalRow?.cnt ?? 0;
 
   const dataSql = `
     ${BASE_SELECT}
     ${whereClause}
-    GROUP BY b.id
     ORDER BY ${orderBy}
     LIMIT ? OFFSET ?
   `;

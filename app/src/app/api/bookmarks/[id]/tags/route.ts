@@ -22,7 +22,7 @@ export async function POST(req: NextRequest, ctx: RouteContext<'/api/bookmarks/[
   // Add association (ignore if already exists)
   await db
     .insert(bookmarkTags)
-    .values({ bookmarkId, tagId: tag.id })
+    .values({ bookmarkId, tagId: tag.id, source: 'manual' })
     .onConflictDoNothing();
 
   return Response.json({ ok: true, tag });

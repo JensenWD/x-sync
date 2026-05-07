@@ -1,10 +1,9 @@
 'use client';
 
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
-import { useState, useCallback } from 'react';
-import { SearchIcon, XIcon, SlidersHorizontalIcon, BookmarkXIcon } from 'lucide-react';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { SearchIcon, XIcon, SlidersHorizontalIcon, BookmarkXIcon, Loader2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
@@ -15,11 +14,13 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { BookmarkCard } from './bookmark-card';
 import { useBookmarks } from '@/hooks/use-bookmarks';
+import { useFolders } from '@/hooks/use-folders';
 import { useDebounce } from '@/hooks/use-debounce';
 
 const SORT_LABELS: Record<string, string> = {
   bookmarked_at_desc: 'Newest first',
   bookmarked_at_asc: 'Oldest first',
+  like_count_desc: 'Most liked',
   author_asc: 'Author A–Z',
 };
 
@@ -27,6 +28,7 @@ export function BookmarkGrid() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
   const [searchInput, setSearchInput] = useState(searchParams.get('search') || '');
   const debouncedSearch = useDebounce(searchInput, 300);
@@ -34,13 +36,14 @@ export function BookmarkGrid() {
   const folderId = searchParams.get('folder_id') ? parseInt(searchParams.get('folder_id')!, 10) : null;
   const activeTag = searchParams.get('tag');
   const sort = searchParams.get('sort') || 'bookmarked_at_desc';
-  const page = parseInt(searchParams.get('page') || '1', 10);
+
+  const { data: folders = [] } = useFolders();
+  const activeFolder = folderId ? folders.find((f) => f.id === folderId) : null;
 
   function setParam(key: string, value: string | null) {
     const next = new URLSearchParams(searchParams.toString());
     if (value === null) next.delete(key);
     else next.set(key, value);
-    next.set('page', '1');
     router.push(`${pathname}?${next.toString()}`);
   }
 
@@ -50,29 +53,45 @@ export function BookmarkGrid() {
       const next = new URLSearchParams(searchParams.toString());
       if (value) next.set('search', value);
       else next.delete('search');
-      next.set('page', '1');
       router.push(`${pathname}?${next.toString()}`);
     },
     [searchParams, router, pathname],
   );
 
-  const { data, isLoading, isFetching } = useBookmarks({
+  const { data, isLoading, isFetchingNextPage, fetchNextPage, hasNextPage } = useBookmarks({
     search: debouncedSearch || undefined,
     folder_id: folderId,
     tag: activeTag,
     sort,
-    page,
     per_page: 40,
   });
 
-  const bookmarks = data?.data ?? [];
-  const meta = data?.meta;
+  const bookmarks = Array.from(
+    new Map((data?.pages.flatMap((p) => p.data) ?? []).map((b) => [b.id, b])).values()
+  );
+  const total = data?.pages[0]?.meta.total;
+
+  // IntersectionObserver — trigger next page when sentinel enters viewport
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && hasNextPage && !isFetchingNextPage) {
+          fetchNextPage();
+        }
+      },
+      { rootMargin: '200px' },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
       {/* Toolbar */}
       <div className="sticky top-0 z-10 bg-background/80 backdrop-blur-md">
-        <div className="max-w-[600px] mx-auto border-x border-[var(--card-border)]">
+        <div className="max-w-[640px] mx-auto">
           <div className="px-4 py-3 space-y-2">
             <div className="flex items-center gap-3">
               {/* Search */}
@@ -97,9 +116,9 @@ export function BookmarkGrid() {
               {/* Sort */}
               <DropdownMenu>
                 <DropdownMenuTrigger
-                  className="inline-flex items-center gap-1.5 h-9 px-3 rounded-full border border-[var(--card-border)] text-[var(--text-secondary)] text-[13px] bg-transparent hover:bg-[#1a1a1a] transition-colors shrink-0"
+                  className="inline-flex items-center gap-1.5 h-9 px-3 rounded-full border border-[var(--card-border)] text-[var(--text-secondary)] text-[13px] bg-transparent hover:bg-[#1a1a1a] transition-colors shrink-0 whitespace-nowrap"
                 >
-                  <SlidersHorizontalIcon className="w-4 h-4" />
+                  <SlidersHorizontalIcon className="w-4 h-4 shrink-0" />
                   {SORT_LABELS[sort]}
                 </DropdownMenuTrigger>
                 <DropdownMenuContent className="bg-[#1a1a1a] border-[var(--card-border)] rounded-xl">
@@ -122,27 +141,31 @@ export function BookmarkGrid() {
                 {debouncedSearch && (
                   <Badge
                     variant="secondary"
-                    className="text-[13px] gap-1.5 cursor-pointer hover:bg-[#2a2a2a] rounded-full px-3 py-1"
+                    className="text-[13px] gap-1.5 cursor-pointer hover:bg-[#2a2a2a] rounded-full px-3 py-1 max-w-[260px]"
                     onClick={() => updateSearch('')}
                   >
-                    &ldquo;{debouncedSearch}&rdquo;
-                    <XIcon className="w-3.5 h-3.5" />
+                    <span className="truncate">&ldquo;{debouncedSearch}&rdquo;</span>
+                    <XIcon className="w-3.5 h-3.5 shrink-0" />
                   </Badge>
                 )}
-                {folderId && (
+                {activeFolder && (
                   <Badge
                     variant="secondary"
-                    className="text-[13px] gap-1.5 cursor-pointer hover:bg-[#2a2a2a] rounded-full px-3 py-1"
+                    className="text-[13px] gap-1.5 cursor-pointer hover:bg-[#2a2a2a] rounded-full px-3 py-1 whitespace-nowrap"
                     onClick={() => setParam('folder_id', null)}
                   >
-                    Folder
+                    <span
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{ backgroundColor: activeFolder.color ?? '#71767b' }}
+                    />
+                    {activeFolder.name}
                     <XIcon className="w-3.5 h-3.5" />
                   </Badge>
                 )}
                 {activeTag && (
                   <Badge
                     variant="secondary"
-                    className="text-[13px] gap-1.5 cursor-pointer hover:bg-[#2a2a2a] rounded-full px-3 py-1"
+                    className="text-[13px] gap-1.5 cursor-pointer hover:bg-[#2a2a2a] rounded-full px-3 py-1 whitespace-nowrap"
                     onClick={() => setParam('tag', null)}
                   >
                     #{activeTag}
@@ -152,23 +175,23 @@ export function BookmarkGrid() {
               </div>
             )}
           </div>
-          <div className="border-b border-[var(--card-border)]" />
+          <div className="border-b border-white/20" />
         </div>
       </div>
 
-      {/* Timeline */}
+      {/* Feed */}
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-[600px] mx-auto border-x border-[var(--card-border)]">
+        <div className="max-w-[640px] mx-auto px-4 py-4">
           {isLoading ? (
-            <div className="space-y-0">
+            <div className="space-y-3">
               {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className="px-4 py-3 border-b border-[var(--card-border)]">
+                <div key={i} className="rounded-xl bg-card ring-1 ring-white/10 px-4 py-3 shadow-[0_4px_24px_rgba(0,0,0,0.55)]">
                   <div className="flex gap-3">
-                    <Skeleton className="w-10 h-10 rounded-full bg-[#1a1a1a]" />
+                    <Skeleton className="w-10 h-10 rounded-full bg-[#2a2a2a]" />
                     <div className="flex-1 space-y-2">
-                      <Skeleton className="h-4 w-48 bg-[#1a1a1a]" />
-                      <Skeleton className="h-3 w-full bg-[#1a1a1a]" />
-                      <Skeleton className="h-3 w-3/4 bg-[#1a1a1a]" />
+                      <Skeleton className="h-4 w-48 bg-[#2a2a2a]" />
+                      <Skeleton className="h-3 w-full bg-[#2a2a2a]" />
+                      <Skeleton className="h-3 w-3/4 bg-[#2a2a2a]" />
                     </div>
                   </div>
                 </div>
@@ -184,42 +207,26 @@ export function BookmarkGrid() {
               </p>
             </div>
           ) : (
-            <>
-              <div className={isFetching ? 'opacity-75 transition-opacity' : ''}>
-                {bookmarks.map((bookmark) => (
-                  <BookmarkCard key={bookmark.id} bookmark={bookmark} />
-                ))}
-              </div>
+            <div className="space-y-3">
+              {bookmarks.map((bookmark) => (
+                <BookmarkCard key={bookmark.id} bookmark={bookmark} />
+              ))}
 
-              {/* Pagination */}
-              {meta && meta.last_page > 1 && (
-                <div className="flex items-center justify-between px-4 py-3 border-t border-[var(--card-border)]">
-                  <span className="text-[13px] text-[var(--text-secondary)]">
-                    Page {meta.current_page} of {meta.last_page} · {meta.total} bookmarks
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8 text-[13px] border-[var(--card-border)] rounded-full px-4"
-                      disabled={meta.current_page <= 1}
-                      onClick={() => setParam('page', String(meta.current_page - 1))}
-                    >
-                      Prev
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8 text-[13px] border-[var(--card-border)] rounded-full px-4"
-                      disabled={meta.current_page >= meta.last_page}
-                      onClick={() => setParam('page', String(meta.current_page + 1))}
-                    >
-                      Next
-                    </Button>
-                  </div>
+              {/* Sentinel — triggers next page load */}
+              <div ref={sentinelRef} className="h-px" />
+
+              {isFetchingNextPage && (
+                <div className="flex justify-center py-6">
+                  <Loader2 className="w-5 h-5 animate-spin text-[var(--text-secondary)]" />
                 </div>
               )}
-            </>
+
+              {!hasNextPage && total !== undefined && total > 0 && (
+                <p className="text-center text-[12px] text-[var(--text-secondary)] py-6 font-mono">
+                  {total} bookmarks
+                </p>
+              )}
+            </div>
           )}
         </div>
       </div>

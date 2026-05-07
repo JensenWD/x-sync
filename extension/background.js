@@ -24,6 +24,21 @@ async function sendToDashboard(bookmarks) {
   return totalSynced;
 }
 
+// Train + classify runs once at the end of a sync so we don't re-train per batch.
+// Failure here doesn't fail the sync — the dashboard exposes a "Sparkles" button
+// to re-trigger classification manually.
+async function triggerAutoTag() {
+  try {
+    await fetch(`${DASHBOARD_URL}/api/bookmarks/auto-tag`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+  } catch (err) {
+    console.warn('[x-sync] auto-tag request failed:', err);
+  }
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'BOOKMARK') {
     if (syncActive) {
@@ -129,6 +144,8 @@ async function handleScrollComplete() {
   try {
     chrome.runtime.sendMessage({ type: 'SYNC_SAVING' }).catch(() => {});
     const synced_count = await sendToDashboard(bookmarks);
+    // Fire-and-forget: don't block sync completion on classification.
+    triggerAutoTag();
     chrome.runtime.sendMessage({ type: 'SYNC_COMPLETE', synced_count }).catch(() => {});
   } catch (err) {
     chrome.runtime.sendMessage({

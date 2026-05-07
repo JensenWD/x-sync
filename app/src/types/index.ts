@@ -8,6 +8,7 @@ export interface Folder {
 export interface Tag {
   id: number;
   name: string;
+  source?: 'manual' | 'auto';
   bookmark_count?: number;
 }
 

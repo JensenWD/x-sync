@@ -3,14 +3,15 @@
 import { useState } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { formatDistanceToNow } from 'date-fns';
-import { BookmarkIcon, FolderIcon, TagIcon, RefreshCw, PlusIcon, AlertCircle, Loader2 } from 'lucide-react';
+import { BookmarkIcon, RefreshCw, PlusIcon, AlertCircle, Loader2, SparklesIcon, Trash2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { SyncDialog } from '@/components/sync/sync-dialog';
-import { useFolders, useCreateFolder } from '@/hooks/use-folders';
+import { useFolders, useCreateFolder, useDeleteFolder } from '@/hooks/use-folders';
 import { useTags } from '@/hooks/use-tags';
+import { useAutoTag } from '@/hooks/use-bookmarks';
 import { useSyncStatus } from '@/hooks/use-sync';
 import { cn } from '@/lib/utils';
 
@@ -32,6 +33,8 @@ export function Sidebar() {
   const { data: tags = [] } = useTags();
   const { data: syncStatus } = useSyncStatus();
   const createFolder = useCreateFolder();
+  const deleteFolder = useDeleteFolder();
+  const autoTag = useAutoTag();
 
   const activeFolderId = searchParams.get('folder_id');
   const activeTag = searchParams.get('tag');
@@ -108,7 +111,7 @@ export function Sidebar() {
           {syncStatus && (
             <Badge
               variant="secondary"
-              className="text-[10px] px-1.5 py-0 h-4 bg-muted text-text-secondary font-mono"
+              className="text-[13px] px-1.5 py-0 h-5 bg-muted text-text-secondary font-mono"
             >
               {syncStatus.total_bookmarks}
             </Badge>
@@ -118,7 +121,7 @@ export function Sidebar() {
         {/* Folders section */}
         <div className="pt-3 pb-1">
           <div className="flex items-center justify-between px-3 mb-1">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-text-secondary">
+            <span className="text-[14px] font-semibold uppercase tracking-wider text-text-secondary">
               Folders
             </span>
             <button
@@ -178,41 +181,70 @@ export function Sidebar() {
           )}
 
           {folders.map((folder) => (
-            <button
+            <div
               key={folder.id}
-              onClick={() => handleFolder(folder.id)}
               className={cn(
-                'w-full flex items-center justify-between px-3 py-1.5 rounded-md text-sm transition-colors duration-150',
+                'group/folder flex items-center rounded-md transition-colors duration-150',
                 activeFolderId === String(folder.id)
-                  ? 'bg-secondary text-text-primary'
-                  : 'text-text-secondary hover:bg-secondary/50 hover:text-text-primary',
+                  ? 'bg-secondary'
+                  : 'hover:bg-secondary/50',
               )}
             >
-              <div className="flex items-center gap-2 min-w-0">
-                <span
-                  className="w-2 h-2 rounded-full shrink-0"
-                  style={{ backgroundColor: folder.color ?? '#71767b' }}
-                />
-                <span className="truncate text-xs">{folder.name}</span>
-              </div>
-              {folder.bookmark_count !== undefined && (
-                <span className="text-[10px] font-mono text-text-secondary shrink-0">
-                  {folder.bookmark_count}
-                </span>
-              )}
-            </button>
+              <button
+                onClick={() => handleFolder(folder.id)}
+                className={cn(
+                  'flex-1 flex items-center justify-between px-3 py-1.5 text-sm min-w-0',
+                  activeFolderId === String(folder.id)
+                    ? 'text-text-primary'
+                    : 'text-text-secondary hover:text-text-primary',
+                )}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span
+                    className="w-2 h-2 rounded-full shrink-0"
+                    style={{ backgroundColor: folder.color ?? '#71767b' }}
+                  />
+                  <span className="truncate text-xs">{folder.name}</span>
+                </div>
+                {folder.bookmark_count !== undefined && (
+                  <span className="text-[13px] font-mono text-text-secondary shrink-0 group-hover/folder:hidden">
+                    {folder.bookmark_count}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => deleteFolder.mutate(folder.id)}
+                disabled={deleteFolder.isPending}
+                className="hidden group-hover/folder:flex items-center pr-2 text-text-secondary hover:text-[#f4212e] transition-colors disabled:opacity-50"
+                title="Delete folder"
+              >
+                <Trash2Icon className="w-3.5 h-3.5" />
+              </button>
+            </div>
           ))}
           {folders.length === 0 && !addingFolder && (
-            <p className="px-3 text-[11px] text-muted-foreground italic">No folders yet</p>
+            <p className="px-3 text-[14px] text-muted-foreground italic">No folders yet</p>
           )}
         </div>
 
         {/* Tags section */}
         <div className="pt-2 pb-1">
-          <div className="px-3 mb-1">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-text-secondary">
+          <div className="flex items-center justify-between px-3 mb-1">
+            <span className="text-[14px] font-semibold uppercase tracking-wider text-text-secondary">
               Tags
             </span>
+            <button
+              onClick={() => autoTag.mutate(undefined)}
+              disabled={autoTag.isPending}
+              title="Auto-classify untagged bookmarks"
+              className="text-text-secondary hover:text-[#1d9bf0] transition-colors disabled:opacity-50"
+            >
+              {autoTag.isPending ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <SparklesIcon className="w-3.5 h-3.5" />
+              )}
+            </button>
           </div>
           <div className="px-2 flex flex-wrap gap-1">
             {tags.map((tag) => (
@@ -220,7 +252,7 @@ export function Sidebar() {
                 key={tag.id}
                 onClick={() => handleTag(tag.name)}
                 className={cn(
-                  'text-[11px] px-2 py-0.5 rounded-full border transition-colors duration-150',
+                  'text-[14px] px-2 py-0.5 rounded-full border transition-colors duration-150',
                   activeTag === tag.name
                     ? 'bg-[#1d9bf0]/20 border-[#1d9bf0] text-[#1d9bf0]'
                     : 'border-border text-text-secondary hover:border-[#1d9bf0]/50 hover:text-text-primary',
@@ -231,7 +263,7 @@ export function Sidebar() {
               </button>
             ))}
             {tags.length === 0 && (
-              <p className="px-1 text-[11px] text-muted-foreground italic">No tags yet</p>
+              <p className="px-1 text-[14px] text-muted-foreground italic">No tags yet</p>
             )}
           </div>
         </div>
@@ -246,12 +278,12 @@ export function Sidebar() {
           </div>
         )}
         {lastSynced && !syncStatus?.in_progress && (
-          <p className="text-[11px] text-muted-foreground font-mono">
+          <p className="text-[14px] text-muted-foreground font-mono">
             Synced {lastSynced}
           </p>
         )}
         {!lastSynced && !syncStatus?.in_progress && (
-          <p className="text-[11px] text-muted-foreground italic">Never synced</p>
+          <p className="text-[14px] text-muted-foreground italic">Never synced</p>
         )}
         <Button
           size="sm"

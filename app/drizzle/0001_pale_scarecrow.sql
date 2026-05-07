@@ -1,0 +1,1 @@
+ALTER TABLE `bookmark_tags` ADD `source` text DEFAULT 'manual' NOT NULL;

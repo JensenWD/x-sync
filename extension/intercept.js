@@ -13,19 +13,37 @@
       result?.core?.user_results?.result?.core?.user_results?.result?.legacy,
       result?.author?.legacy,
       result?.user?.legacy,
+      result?.tweet?.core?.user_results?.result?.legacy,
     ];
     for (const p of paths) {
       if (p?.screen_name) return p;
     }
 
-    // Brute-force: walk one level deep looking for an object with screen_name
+    // Brute-force: walk the core object looking for screen_name
     if (result?.core) {
       for (const key of Object.keys(result.core)) {
-        const nested = result.core[key]?.result?.legacy;
-        if (nested?.screen_name) return nested;
+        const val = result.core[key];
+        if (val?.result?.legacy?.screen_name) return val.result.legacy;
+        if (val?.legacy?.screen_name) return val.legacy;
       }
     }
-    return null;
+
+    // Deep walk: search recursively (max 4 levels) for an object with screen_name + name
+    function deepFind(obj, depth) {
+      if (!obj || depth > 4 || typeof obj !== 'object') return null;
+      if (obj.screen_name && obj.name) return obj;
+      for (const k of Object.keys(obj)) {
+        const found = deepFind(obj[k], depth + 1);
+        if (found) return found;
+      }
+      return null;
+    }
+
+    // Search in core first, then the whole result
+    const fromCore = deepFind(result?.core, 0);
+    if (fromCore) return fromCore;
+
+    return deepFind(result, 0);
   }
 
   function isVerified(result) {

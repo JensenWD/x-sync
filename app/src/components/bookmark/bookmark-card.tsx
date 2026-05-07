@@ -10,6 +10,7 @@ import { FolderDropdown } from '@/components/folder/folder-dropdown';
 import { TagInput } from '@/components/tag/tag-input';
 import { ArchiveBookmarkDialog } from './archive-bookmark-dialog';
 import { useArchiveBookmark } from '@/hooks/use-bookmarks';
+import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type { Bookmark } from '@/types';
 
@@ -116,9 +117,33 @@ export function BookmarkCard({ bookmark }: BookmarkCardProps) {
 
   const mediaUrls = bookmark.media_urls ?? [];
 
+  // Card-level activation: open the tweet on X. Skips when the user clicked an
+  // interactive child or is selecting text. onAuxClick handles middle-click so
+  // browsers' native "open in new tab" works on the entire card surface.
+  function isInteractiveTarget(e: React.MouseEvent) {
+    const target = e.target as HTMLElement | null;
+    return !!target?.closest('a, button, input, [role="checkbox"]');
+  }
+
+  function handleCardClick(e: React.MouseEvent) {
+    if (e.defaultPrevented) return;
+    if (isInteractiveTarget(e)) return;
+    if (window.getSelection()?.toString()) return;
+    window.open(bookmark.tweet_url, '_blank', 'noopener,noreferrer');
+  }
+
+  function handleCardAuxClick(e: React.MouseEvent) {
+    if (e.button !== 1) return;
+    if (isInteractiveTarget(e)) return;
+    e.preventDefault();
+    window.open(bookmark.tweet_url, '_blank', 'noopener,noreferrer');
+  }
+
   return (
-    <article
-      className="group relative border-b border-[var(--card-border)] px-4 py-3 transition-colors hover:bg-[#080808]"
+    <Card
+      onClick={handleCardClick}
+      onAuxClick={handleCardAuxClick}
+      className="group relative gap-0 px-4 py-3 rounded-xl bg-card ring-1 ring-white/10 shadow-[0_4px_24px_rgba(0,0,0,0.55)] hover:ring-white/20 hover:shadow-[0_6px_30px_rgba(0,0,0,0.65)] transition-all duration-200 cursor-pointer"
     >
       <div className="flex gap-3">
         {/* Avatar column */}
@@ -164,7 +189,7 @@ export function BookmarkCard({ bookmark }: BookmarkCardProps) {
           {mediaUrls.length > 0 && (
             <div
               className={cn(
-                'rounded-2xl overflow-hidden border border-[var(--card-border)] mb-2',
+                'rounded-2xl overflow-hidden mb-2',
                 mediaUrls.length === 1 && 'max-h-[300px]',
                 mediaUrls.length >= 2 && 'grid gap-0.5',
                 mediaUrls.length === 2 && 'grid-cols-2',
@@ -223,7 +248,7 @@ export function BookmarkCard({ bookmark }: BookmarkCardProps) {
 
           {/* Folder + tag chips */}
           {(bookmark.folders.length > 0 || bookmark.tags.length > 0) && (
-            <div className="flex flex-wrap gap-1.5 mb-2" onClick={(e) => e.stopPropagation()}>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-2" onClick={(e) => e.stopPropagation()}>
               {bookmark.folders.map((f) => (
                 <Badge
                   key={f.id}
@@ -235,18 +260,15 @@ export function BookmarkCard({ bookmark }: BookmarkCardProps) {
                 </Badge>
               ))}
               {bookmark.tags.map((t) => (
-                <Badge
+                <span
                   key={t.id}
-                  variant="outline"
                   className={cn(
-                    'text-[14px] px-2 py-0.5 h-6 font-mono rounded-full',
-                    t.source === 'auto'
-                      ? 'border-dashed border-[var(--card-border)] text-[var(--text-secondary)] opacity-70'
-                      : 'border-[var(--card-border)] text-[var(--text-secondary)]',
+                    'text-[14px] font-bold font-mono text-white',
+                    t.source === 'auto' && 'opacity-60',
                   )}
                 >
                   #{t.name}
-                </Badge>
+                </span>
               ))}
             </div>
           )}
@@ -319,6 +341,6 @@ export function BookmarkCard({ bookmark }: BookmarkCardProps) {
         }}
         isPending={archiveBookmark.isPending}
       />
-    </article>
+    </Card>
   );
 }

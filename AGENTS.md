@@ -106,3 +106,4 @@ Content scripts re-inject on every navigation. Use an `__xSyncInterceptInstalled
 - **Never use `fetch` from content scripts to localhost** — CORS blocks it. Route through the service worker.
 - **Never assume X uses `fetch`** — they use XMLHttpRequest. Always patch both.
 - **Never hardcode the GraphQL `queryId`** — it rotates. The interceptor matches URL patterns, not specific IDs.
+- **Never clear, drop, truncate, or delete data from the database** — `data/bookmarks.db` is the user's personal bookmark archive. Never run destructive SQL (`DELETE FROM bookmarks`, `DROP TABLE`, `TRUNCATE`, etc.) or delete the database file.

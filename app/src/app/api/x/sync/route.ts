@@ -16,6 +16,9 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'bookmarks array is required' }, { status: 400 });
   }
 
+  // Auto-tag is intentionally NOT triggered per-batch — the extension fires
+  // a single /api/bookmarks/auto-tag call after all batches complete, so we
+  // train + classify exactly once per sync regardless of batch count.
   try {
     const synced_count = upsertBookmarkBatch(bookmarks);
     return Response.json({ status: 'success', synced_count });

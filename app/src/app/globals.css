@@ -59,11 +59,11 @@
   --secondary: #2a2a2a;
   --secondary-foreground: #e7e9ea;
   --muted: #222222;
-  --muted-foreground: #71767b;
+  --muted-foreground: #ffffff;
   --accent: #1d9bf0;
   --accent-foreground: #ffffff;
   --destructive: oklch(0.704 0.191 22.216);
-  --border: #2a2a2a;
+  --border: #ffffff;
   --input: #2a2a2a;
   --ring: #1d9bf0;
   --radius: 0.5rem;
@@ -73,15 +73,15 @@
   --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #2a2a2a;
   --sidebar-accent-foreground: #e7e9ea;
-  --sidebar-border: #2a2a2a;
+  --sidebar-border: #ffffff;
   --sidebar-ring: #1d9bf0;
 
   /* App-specific */
   --x-accent: #1d9bf0;
-  --card-border: #2a2a2a;
+  --card-border: #ffffff;
   --card-border-hover: #3a3a3a;
   --text-primary: #e7e9ea;
-  --text-secondary: #71767b;
+  --text-secondary: #ffffff;
 }
 
 @layer base {

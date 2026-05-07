@@ -59,5 +59,6 @@ export interface SyncStatus {
   in_progress: boolean;
   last_synced_at: number | null;
   total_bookmarks: number;
+  untagged_count: number;
   last_error: string | null;
 }

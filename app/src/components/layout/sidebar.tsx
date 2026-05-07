@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { formatDistanceToNow } from 'date-fns';
-import { BookmarkIcon, RefreshCw, PlusIcon, AlertCircle, Loader2, SparklesIcon, Trash2Icon } from 'lucide-react';
+import { BookmarkIcon, RefreshCw, PlusIcon, AlertCircle, Loader2, SparklesIcon, Trash2Icon, XIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -20,7 +20,12 @@ const FOLDER_COLORS = [
   '#ff7a00', '#7856ff', '#fa3939', '#71767b',
 ];
 
-export function Sidebar() {
+interface SidebarProps {
+  open?: boolean;
+  onClose?: () => void;
+}
+
+export function Sidebar({ open = true, onClose }: SidebarProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -51,14 +56,17 @@ export function Sidebar() {
 
   function handleAllBookmarks() {
     router.push(pathname);
+    onClose?.();
   }
 
   function handleFolder(id: number) {
     navigate({ folder_id: String(id), tag: null });
+    onClose?.();
   }
 
   function handleTag(name: string) {
     navigate({ tag: name, folder_id: null });
+    onClose?.();
   }
 
   async function handleCreateFolder() {
@@ -74,14 +82,29 @@ export function Sidebar() {
     : null;
 
   return (
-    <aside className="w-[220px] shrink-0 flex flex-col h-screen border-r border-border bg-sidebar sticky top-0 overflow-y-auto">
+    <aside className={cn(
+      'w-[220px] shrink-0 flex flex-col h-screen border-r border-border bg-sidebar overflow-y-auto',
+      // Mobile: fixed overlay that slides in/out
+      'fixed inset-y-0 left-0 z-40 transition-transform duration-300 ease-in-out',
+      open ? 'translate-x-0' : '-translate-x-full',
+      // Desktop: back to normal flow, always visible
+      'md:sticky md:top-0 md:translate-x-0 md:z-auto',
+    )}>
       {/* App header */}
       <div className="px-4 pt-5 pb-3 border-b border-border">
-        <div className="flex items-center gap-2">
-          <BookmarkIcon className="w-4 h-4 text-[#1d9bf0]" />
-          <span className="font-semibold text-sm text-text-primary tracking-tight">
-            X Bookmarks
-          </span>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <BookmarkIcon className="w-4 h-4 text-[#1d9bf0]" />
+            <span className="font-semibold text-sm text-text-primary tracking-tight">
+              X Bookmarks
+            </span>
+          </div>
+          <button
+            onClick={onClose}
+            className="md:hidden p-1 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-secondary transition-colors"
+          >
+            <XIcon className="w-4 h-4" />
+          </button>
         </div>
       </div>
 

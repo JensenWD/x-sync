@@ -10,6 +10,11 @@ const nextConfig: NextConfig = {
     root: path.join(__dirname),
   },
   devIndicators: false,
+  allowedDevOrigins: [
+    'johnnys-macbook-pro.tailf5c3be.ts.net',
+    '*.tailf5c3be.ts.net',
+    '100.101.52.24',
+  ],
 };
 
 export default nextConfig;

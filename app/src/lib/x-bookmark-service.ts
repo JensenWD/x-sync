@@ -5,6 +5,7 @@ interface SyncStatus {
   in_progress: boolean;
   last_synced_at: number | null;
   total_bookmarks: number;
+  untagged_count: number;
   last_error: string | null;
 }
 
@@ -12,14 +13,26 @@ const syncStatus: SyncStatus = {
   in_progress: false,
   last_synced_at: null,
   total_bookmarks: 0,
+  untagged_count: 0,
   last_error: null,
 };
 
 export function getSyncStatus(): SyncStatus {
   const countRow = rawDb
-    .prepare('SELECT COUNT(*) as cnt FROM bookmarks')
+    .prepare('SELECT COUNT(*) as cnt FROM bookmarks WHERE archived_at IS NULL')
     .get() as { cnt: number };
-  return { ...syncStatus, total_bookmarks: countRow.cnt };
+  const untaggedRow = rawDb
+    .prepare(
+      `SELECT COUNT(*) as cnt FROM bookmarks b
+       WHERE b.archived_at IS NULL
+         AND NOT EXISTS (SELECT 1 FROM bookmark_tags bt WHERE bt.bookmark_id = b.id)`,
+    )
+    .get() as { cnt: number };
+  return {
+    ...syncStatus,
+    total_bookmarks: countRow.cnt,
+    untagged_count: untaggedRow.cnt,
+  };
 }
 
 export interface BookmarkRow {

@@ -1,10 +1,13 @@
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { BookmarksResponse } from '@/types';
 
-interface BookmarkFilters {
+export interface BookmarkFilters {
   search?: string;
-  folder_id?: number | null;
-  tag?: string | null;
+  folder_ids?: number[];
+  tag_names?: string[];
+  untagged?: boolean;
+  from_ts?: number | null;
+  to_ts?: number | null;
   sort?: string;
   per_page?: number;
 }
@@ -13,8 +16,15 @@ export function useBookmarks(filters: BookmarkFilters = {}) {
   const buildParams = (page: number) => {
     const params = new URLSearchParams();
     if (filters.search) params.set('search', filters.search);
-    if (filters.folder_id) params.set('folder_id', String(filters.folder_id));
-    if (filters.tag) params.set('tag', filters.tag);
+    if (filters.folder_ids && filters.folder_ids.length > 0) {
+      params.set('folder_id', filters.folder_ids.join(','));
+    }
+    if (filters.tag_names && filters.tag_names.length > 0) {
+      params.set('tag', filters.tag_names.join(','));
+    }
+    if (filters.untagged) params.set('untagged', '1');
+    if (filters.from_ts) params.set('from', String(filters.from_ts));
+    if (filters.to_ts) params.set('to', String(filters.to_ts));
     if (filters.sort) params.set('sort', filters.sort);
     params.set('per_page', String(filters.per_page ?? 40));
     params.set('page', String(page));
@@ -37,7 +47,10 @@ export function useArchiveBookmark() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => fetch(`/api/bookmarks/${id}`, { method: 'DELETE' }).then((r) => r.json()),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['bookmarks'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['bookmarks'] });
+      queryClient.invalidateQueries({ queryKey: ['sync-status'] });
+    },
   });
 }
 
@@ -53,6 +66,7 @@ export function useAddTag() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bookmarks'] });
       queryClient.invalidateQueries({ queryKey: ['tags'] });
+      queryClient.invalidateQueries({ queryKey: ['sync-status'] });
     },
   });
 }
@@ -67,6 +81,7 @@ export function useRemoveTag() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bookmarks'] });
       queryClient.invalidateQueries({ queryKey: ['tags'] });
+      queryClient.invalidateQueries({ queryKey: ['sync-status'] });
     },
   });
 }
@@ -83,6 +98,66 @@ export function useAutoTag() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bookmarks'] });
       queryClient.invalidateQueries({ queryKey: ['tags'] });
+      queryClient.invalidateQueries({ queryKey: ['sync-status'] });
+    },
+  });
+}
+
+interface BulkParamsBase {
+  ids: number[];
+}
+
+interface BulkArchiveParams extends BulkParamsBase {}
+
+interface BulkTagParams extends BulkParamsBase {
+  tags: string[];
+}
+
+interface BulkFolderParams extends BulkParamsBase {
+  folder_ids: number[];
+}
+
+function postBulk(body: Record<string, unknown>) {
+  return fetch('/api/bookmarks/bulk', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).then((r) => r.json());
+}
+
+export function useBulkArchive() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ ids }: BulkArchiveParams) => postBulk({ action: 'archive', ids }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['bookmarks'] });
+      queryClient.invalidateQueries({ queryKey: ['sync-status'] });
+      queryClient.invalidateQueries({ queryKey: ['folders'] });
+      queryClient.invalidateQueries({ queryKey: ['tags'] });
+    },
+  });
+}
+
+export function useBulkAddTags() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ ids, tags }: BulkTagParams) => postBulk({ action: 'add_tags', ids, tags }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['bookmarks'] });
+      queryClient.invalidateQueries({ queryKey: ['tags'] });
+      queryClient.invalidateQueries({ queryKey: ['sync-status'] });
+    },
+  });
+}
+
+export function useBulkAddFolders() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ ids, folder_ids }: BulkFolderParams) =>
+      postBulk({ action: 'add_folders', ids, folder_ids }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['bookmarks'] });
+      queryClient.invalidateQueries({ queryKey: ['folders'] });
     },
   });
 }

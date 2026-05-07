@@ -66,11 +66,30 @@ const BASE_SELECT = `
   FROM bookmarks b
 `;
 
+function parseIdList(value: string | null): number[] {
+  if (!value) return [];
+  return value
+    .split(',')
+    .map((s) => parseInt(s.trim(), 10))
+    .filter((n) => Number.isFinite(n) && n > 0);
+}
+
+function parseStringList(value: string | null): string[] {
+  if (!value) return [];
+  return value
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
   const search = searchParams.get('search')?.trim();
-  const folderId = searchParams.get('folder_id');
-  const tagName = searchParams.get('tag');
+  const folderIds = parseIdList(searchParams.get('folder_id'));
+  const tagNames = parseStringList(searchParams.get('tag'));
+  const untagged = searchParams.get('untagged') === '1';
+  const fromTs = parseInt(searchParams.get('from') || '', 10);
+  const toTs = parseInt(searchParams.get('to') || '', 10);
   const sort = searchParams.get('sort') || 'bookmarked_at_desc';
   const perPage = Math.min(parseInt(searchParams.get('per_page') || '40', 10), 100);
   const page = Math.max(parseInt(searchParams.get('page') || '1', 10), 1);
@@ -80,52 +99,63 @@ export async function GET(req: NextRequest) {
   const params: (string | number)[] = [];
 
   if (search) {
-    // FTS5 prefix search per token. Wrap each token as a quoted phrase so:
-    //   - non-ASCII chars survive (porter unicode61 tokenizer handles them)
-    //   - reserved tokens (AND/OR/NOT/NEAR) are treated as literals
-    //   - punctuation in the user input doesn't break the parser
-    // Embedded `"` is escaped per FTS5 rules by doubling.
-    const tokens = search
+    // FTS5 prefix match on alphanumeric tokens. Strip non-alpha for safety against
+    // syntax errors, but keep the bareword + wildcard form so multi-token queries
+    // (e.g. "claude code") behave like AND.
+    const ftsQuery = search
       .split(/\s+/)
-      .map((w) => w.trim())
       .filter(Boolean)
-      .map((w) => `"${w.replace(/"/g, '""')}"*`);
-    if (tokens.length === 0) {
-      return Response.json({
-        data: [],
-        meta: { total: 0, per_page: perPage, current_page: page, last_page: 1 },
-      });
-    }
-    const ftsQuery = tokens.join(' ');
-    let ftsRows: { rowid: number }[] = [];
-    try {
-      ftsRows = rawDb
+      .map((w) => `${w.replace(/[^a-zA-Z0-9]/g, '')}*`)
+      .filter((w) => w.length > 1)
+      .join(' ');
+    if (ftsQuery) {
+      const ftsRows = rawDb
         .prepare(
           `SELECT rowid FROM bookmarks_fts WHERE bookmarks_fts MATCH ? ORDER BY rank LIMIT 500`,
         )
         .all(ftsQuery) as { rowid: number }[];
-    } catch {
-      // Pathological query that FTS5 still rejects — return no results.
-      ftsRows = [];
+      if (ftsRows.length === 0) {
+        return Response.json({
+          data: [],
+          meta: { total: 0, per_page: perPage, current_page: page, last_page: 1 },
+        });
+      }
+      const ids = ftsRows.map((r) => r.rowid).join(',');
+      conditions.push(`b.id IN (${ids})`);
     }
-    if (ftsRows.length === 0) {
-      return Response.json({
-        data: [],
-        meta: { total: 0, per_page: perPage, current_page: page, last_page: 1 },
-      });
-    }
-    const ids = ftsRows.map((r) => r.rowid).join(',');
-    conditions.push(`b.id IN (${ids})`);
   }
 
-  if (folderId) {
-    conditions.push(`EXISTS (SELECT 1 FROM bookmark_folders bf2 WHERE bf2.bookmark_id = b.id AND bf2.folder_id = ?)`);
-    params.push(parseInt(folderId, 10));
+  // Folder filter — any-of semantics (a bookmark in ANY selected folder matches)
+  if (folderIds.length > 0) {
+    const placeholders = folderIds.map(() => '?').join(',');
+    conditions.push(
+      `EXISTS (SELECT 1 FROM bookmark_folders bf2 WHERE bf2.bookmark_id = b.id AND bf2.folder_id IN (${placeholders}))`,
+    );
+    params.push(...folderIds);
   }
 
-  if (tagName) {
-    conditions.push(`EXISTS (SELECT 1 FROM bookmark_tags bt2 JOIN tags t2 ON t2.id = bt2.tag_id WHERE bt2.bookmark_id = b.id AND t2.name = ?)`);
-    params.push(tagName);
+  // Tag filter — all-of semantics (must match every selected tag).
+  // Counts distinct matching tag names against the requested list.
+  if (tagNames.length > 0) {
+    const placeholders = tagNames.map(() => '?').join(',');
+    conditions.push(
+      `(SELECT COUNT(DISTINCT t2.name) FROM bookmark_tags bt2 JOIN tags t2 ON t2.id = bt2.tag_id
+        WHERE bt2.bookmark_id = b.id AND t2.name IN (${placeholders})) = ?`,
+    );
+    params.push(...tagNames, tagNames.length);
+  }
+
+  if (untagged) {
+    conditions.push(`NOT EXISTS (SELECT 1 FROM bookmark_tags bt3 WHERE bt3.bookmark_id = b.id)`);
+  }
+
+  if (Number.isFinite(fromTs) && fromTs > 0) {
+    conditions.push(`b.bookmarked_at >= ?`);
+    params.push(fromTs);
+  }
+  if (Number.isFinite(toTs) && toTs > 0) {
+    conditions.push(`b.bookmarked_at <= ?`);
+    params.push(toTs);
   }
 
   const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -138,16 +168,14 @@ export async function GET(req: NextRequest) {
   };
   const orderBy = sortMap[sort] || sortMap.bookmarked_at_desc;
 
-  // No DISTINCT / GROUP BY needed: BASE_SELECT only joins on `bookmarks` itself
-  // (folder/tag aggregation happens inside correlated subqueries), so each row
-  // is already unique per b.id.
-  const countSql = `SELECT COUNT(*) as cnt FROM bookmarks b ${whereClause}`;
+  const countSql = `SELECT COUNT(DISTINCT b.id) as cnt FROM bookmarks b ${whereClause}`;
   const totalRow = rawDb.prepare(countSql).get(...params) as { cnt: number };
   const total = totalRow?.cnt ?? 0;
 
   const dataSql = `
     ${BASE_SELECT}
     ${whereClause}
+    GROUP BY b.id
     ORDER BY ${orderBy}
     LIMIT ? OFFSET ?
   `;

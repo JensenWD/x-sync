@@ -1,7 +1,7 @@
 import { rawDb } from '@/lib/db/client';
 import { db } from '@/lib/db/client';
 import { bookmarks } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { NextRequest } from 'next/server';
 
 export async function GET(_req: NextRequest, ctx: RouteContext<'/api/bookmarks/[id]'>) {
@@ -21,7 +21,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext<'/api/bookmarks/[
       LEFT JOIN folders f ON f.id = bf.folder_id
       LEFT JOIN bookmark_tags bt ON bt.bookmark_id = b.id
       LEFT JOIN tags t ON t.id = bt.tag_id
-      WHERE b.id = ?
+      WHERE b.id = ? AND b.archived_at IS NULL
       GROUP BY b.id`,
     )
     .get(parseInt(id, 10)) as
@@ -54,6 +54,9 @@ export async function GET(_req: NextRequest, ctx: RouteContext<'/api/bookmarks/[
 
 export async function DELETE(_req: NextRequest, ctx: RouteContext<'/api/bookmarks/[id]'>) {
   const { id } = await ctx.params;
-  await db.delete(bookmarks).where(eq(bookmarks.id, parseInt(id, 10)));
+  await db
+    .update(bookmarks)
+    .set({ archivedAt: sql`(unixepoch())` })
+    .where(eq(bookmarks.id, parseInt(id, 10)));
   return Response.json({ ok: true });
 }

@@ -39,6 +39,7 @@ export const bookmarks = sqliteTable('bookmarks', {
   lang: text('lang'),
   bookmarkedAt: integer('bookmarked_at'), // Unix timestamp
   syncedAt: integer('synced_at'), // Unix timestamp
+  archivedAt: integer('archived_at'), // Unix timestamp, null = active
   ...timestamps,
 });
 
@@ -79,6 +80,7 @@ export const bookmarkTags = sqliteTable(
     tagId: integer('tag_id')
       .notNull()
       .references(() => tags.id, { onDelete: 'cascade' }),
+    source: text('source').notNull().default('manual'),
   },
   (t) => [primaryKey({ columns: [t.bookmarkId, t.tagId] })],
 );

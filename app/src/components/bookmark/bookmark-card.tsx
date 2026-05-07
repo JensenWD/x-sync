@@ -3,13 +3,13 @@
 import { useState } from 'react';
 import Image from 'next/image';
 import { formatDistanceToNow } from 'date-fns';
-import { ExternalLinkIcon, Trash2Icon, MessageCircleIcon, Repeat2Icon, HeartIcon, BarChart2Icon, BookmarkIcon, BadgeCheckIcon } from 'lucide-react';
+import { ExternalLinkIcon, ArchiveIcon, HeartIcon, BookmarkIcon, BadgeCheckIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { FolderDropdown } from '@/components/folder/folder-dropdown';
 import { TagInput } from '@/components/tag/tag-input';
-import { DeleteBookmarkDialog } from './delete-bookmark-dialog';
-import { useDeleteBookmark } from '@/hooks/use-bookmarks';
+import { ArchiveBookmarkDialog } from './archive-bookmark-dialog';
+import { useArchiveBookmark } from '@/hooks/use-bookmarks';
 import { cn } from '@/lib/utils';
 import type { Bookmark } from '@/types';
 
@@ -107,9 +107,8 @@ interface BookmarkCardProps {
 }
 
 export function BookmarkCard({ bookmark }: BookmarkCardProps) {
-  const [expanded, setExpanded] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const deleteBookmark = useDeleteBookmark();
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const archiveBookmark = useArchiveBookmark();
 
   const relativeTime = bookmark.bookmarked_at
     ? formatDistanceToNow(new Date(bookmark.bookmarked_at * 1000), { addSuffix: true })
@@ -119,8 +118,7 @@ export function BookmarkCard({ bookmark }: BookmarkCardProps) {
 
   return (
     <article
-      className="group relative border-b border-[var(--card-border)] px-4 py-3 cursor-pointer transition-colors hover:bg-[#080808]"
-      onClick={() => setExpanded((v) => !v)}
+      className="group relative border-b border-[var(--card-border)] px-4 py-3 transition-colors hover:bg-[#080808]"
     >
       <div className="flex gap-3">
         {/* Avatar column */}
@@ -136,19 +134,19 @@ export function BookmarkCard({ bookmark }: BookmarkCardProps) {
         <div className="flex-1 min-w-0">
           {/* Author row */}
           <div className="flex items-center gap-1 mb-0.5">
-            <span className="text-[15px] font-bold text-[var(--text-primary)] truncate">
+            <span className="text-[19px] font-bold text-[var(--text-primary)] truncate">
               {bookmark.author_name}
             </span>
             {bookmark.author_verified && (
-              <BadgeCheckIcon className="w-[18px] h-[18px] text-[#1d9bf0] shrink-0" />
+              <BadgeCheckIcon className="w-[22px] h-[22px] text-[#1d9bf0] shrink-0" />
             )}
-            <span className="text-[15px] text-[var(--text-secondary)] truncate">
+            <span className="text-[19px] text-[var(--text-secondary)] truncate">
               @{bookmark.author_handle}
             </span>
             {relativeTime && (
               <>
                 <span className="text-[var(--text-secondary)]">·</span>
-                <span className="text-[15px] text-[var(--text-secondary)] shrink-0 hover:underline">
+                <span className="text-[19px] text-[var(--text-secondary)] shrink-0 hover:underline">
                   {relativeTime}
                 </span>
               </>
@@ -157,10 +155,7 @@ export function BookmarkCard({ bookmark }: BookmarkCardProps) {
 
           {/* Tweet text */}
           <div
-            className={cn(
-              'text-[15px] text-[var(--text-primary)] whitespace-pre-wrap leading-5 mb-2',
-              !expanded && 'line-clamp-5',
-            )}
+            className="text-[19px] text-[var(--text-primary)] whitespace-pre-wrap leading-6 mb-2"
           >
             {linkifyText(bookmark.full_text)}
           </div>
@@ -213,14 +208,14 @@ export function BookmarkCard({ bookmark }: BookmarkCardProps) {
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center gap-1 mb-1">
-                <span className="text-[13px] font-bold text-[var(--text-primary)]">
+                <span className="text-[16px] font-bold text-[var(--text-primary)]">
                   {bookmark.quoted_tweet.author_name}
                 </span>
-                <span className="text-[13px] text-[var(--text-secondary)]">
+                <span className="text-[16px] text-[var(--text-secondary)]">
                   @{bookmark.quoted_tweet.author_handle}
                 </span>
               </div>
-              <p className="text-[13px] text-[var(--text-primary)] line-clamp-3 leading-[18px]">
+              <p className="text-[16px] text-[var(--text-primary)] leading-[22px]">
                 {bookmark.quoted_tweet.full_text}
               </p>
             </a>
@@ -233,7 +228,7 @@ export function BookmarkCard({ bookmark }: BookmarkCardProps) {
                 <Badge
                   key={f.id}
                   variant="secondary"
-                  className="text-[11px] px-2 py-0 h-5 font-normal rounded-full"
+                  className="text-[14px] px-2 py-0.5 h-6 font-normal rounded-full"
                   style={{ borderLeft: `3px solid ${f.color ?? '#71767b'}` }}
                 >
                   {f.name}
@@ -243,7 +238,12 @@ export function BookmarkCard({ bookmark }: BookmarkCardProps) {
                 <Badge
                   key={t.id}
                   variant="outline"
-                  className="text-[11px] px-2 py-0 h-5 font-mono border-[var(--card-border)] text-[var(--text-secondary)] rounded-full"
+                  className={cn(
+                    'text-[14px] px-2 py-0.5 h-6 font-mono rounded-full',
+                    t.source === 'auto'
+                      ? 'border-dashed border-[var(--card-border)] text-[var(--text-secondary)] opacity-70'
+                      : 'border-[var(--card-border)] text-[var(--text-secondary)]',
+                  )}
                 >
                   #{t.name}
                 </Badge>
@@ -251,50 +251,26 @@ export function BookmarkCard({ bookmark }: BookmarkCardProps) {
             </div>
           )}
 
-          {/* Engagement metrics row — matches X layout */}
+          {/* Engagement metrics row */}
           <div
-            className="flex items-center justify-between max-w-[425px] -ml-2 mt-1"
+            className="flex items-center gap-5 -ml-2 mt-1"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Replies */}
-            <button className="group/btn flex items-center gap-1 p-2 rounded-full text-[var(--text-secondary)] hover:text-[#1d9bf0] hover:bg-[#1d9bf0]/10 transition-colors">
-              <MessageCircleIcon className="w-[18px] h-[18px]" />
-              {bookmark.reply_count > 0 && (
-                <span className="text-[13px] leading-none">{formatCount(bookmark.reply_count)}</span>
-              )}
-            </button>
-
-            {/* Retweets */}
-            <button className="group/btn flex items-center gap-1 p-2 rounded-full text-[var(--text-secondary)] hover:text-[#00ba7c] hover:bg-[#00ba7c]/10 transition-colors">
-              <Repeat2Icon className="w-[18px] h-[18px]" />
-              {bookmark.retweet_count > 0 && (
-                <span className="text-[13px] leading-none">{formatCount(bookmark.retweet_count)}</span>
-              )}
-            </button>
-
             {/* Likes */}
-            <button className="group/btn flex items-center gap-1 p-2 rounded-full text-[var(--text-secondary)] hover:text-[#f91880] hover:bg-[#f91880]/10 transition-colors">
+            <span className="flex items-center gap-1 p-2 rounded-full text-[var(--text-secondary)]">
               <HeartIcon className="w-[18px] h-[18px]" />
               {bookmark.like_count > 0 && (
-                <span className="text-[13px] leading-none">{formatCount(bookmark.like_count)}</span>
+                <span className="text-[16px] leading-none">{formatCount(bookmark.like_count)}</span>
               )}
-            </button>
-
-            {/* Views */}
-            <button className="group/btn flex items-center gap-1 p-2 rounded-full text-[var(--text-secondary)] hover:text-[#1d9bf0] hover:bg-[#1d9bf0]/10 transition-colors">
-              <BarChart2Icon className="w-[18px] h-[18px]" />
-              {bookmark.view_count != null && bookmark.view_count > 0 && (
-                <span className="text-[13px] leading-none">{formatCount(bookmark.view_count)}</span>
-              )}
-            </button>
+            </span>
 
             {/* Bookmarks */}
-            <button className="group/btn flex items-center gap-1 p-2 rounded-full text-[var(--text-secondary)] hover:text-[#1d9bf0] hover:bg-[#1d9bf0]/10 transition-colors">
+            <span className="flex items-center gap-1 p-2 rounded-full text-[var(--text-secondary)]">
               <BookmarkIcon className="w-[18px] h-[18px]" />
               {bookmark.bookmark_count != null && bookmark.bookmark_count > 0 && (
-                <span className="text-[13px] leading-none">{formatCount(bookmark.bookmark_count)}</span>
+                <span className="text-[16px] leading-none">{formatCount(bookmark.bookmark_count)}</span>
               )}
-            </button>
+            </span>
 
             {/* View on X */}
             <Tooltip>
@@ -324,24 +300,24 @@ export function BookmarkCard({ bookmark }: BookmarkCardProps) {
             <FolderDropdown bookmarkId={bookmark.id} bookmarkFolders={bookmark.folders} />
             <TagInput bookmarkId={bookmark.id} bookmarkTags={bookmark.tags} />
             <button
-              title="Remove bookmark"
-              className="flex items-center p-2 rounded-full text-[var(--text-secondary)] hover:text-[#f4212e] hover:bg-[#f4212e]/10 transition-colors"
-              onClick={() => setDeleteOpen(true)}
+              title="Archive bookmark"
+              className="flex items-center p-2 rounded-full text-[var(--text-secondary)] hover:text-[var(--accent)] hover:bg-[var(--accent)]/10 transition-colors"
+              onClick={() => setArchiveOpen(true)}
             >
-              <Trash2Icon className="w-[18px] h-[18px]" />
+              <ArchiveIcon className="w-[18px] h-[18px]" />
             </button>
           </div>
         </div>
       </div>
 
-      <DeleteBookmarkDialog
-        open={deleteOpen}
-        onOpenChange={setDeleteOpen}
+      <ArchiveBookmarkDialog
+        open={archiveOpen}
+        onOpenChange={setArchiveOpen}
         onConfirm={() => {
-          deleteBookmark.mutate(bookmark.id);
-          setDeleteOpen(false);
+          archiveBookmark.mutate(bookmark.id);
+          setArchiveOpen(false);
         }}
-        isPending={deleteBookmark.isPending}
+        isPending={archiveBookmark.isPending}
       />
     </article>
   );

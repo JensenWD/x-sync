@@ -61,7 +61,7 @@ const BASE_SELECT = `
       CASE WHEN f.id IS NOT NULL THEN json_object('id', f.id, 'name', f.name, 'color', f.color) END
     ) FILTER (WHERE f.id IS NOT NULL), '[]') AS folders_json,
     COALESCE(json_group_array(
-      CASE WHEN t.id IS NOT NULL THEN json_object('id', t.id, 'name', t.name) END
+      CASE WHEN t.id IS NOT NULL THEN json_object('id', t.id, 'name', t.name, 'source', bt.source) END
     ) FILTER (WHERE t.id IS NOT NULL), '[]') AS tags_json
   FROM bookmarks b
   LEFT JOIN bookmark_folders bf ON bf.bookmark_id = b.id
@@ -80,7 +80,7 @@ export async function GET(req: NextRequest) {
   const page = Math.max(parseInt(searchParams.get('page') || '1', 10), 1);
   const offset = (page - 1) * perPage;
 
-  const conditions: string[] = [];
+  const conditions: string[] = ['b.archived_at IS NULL'];
   const params: (string | number)[] = [];
 
   if (search) {

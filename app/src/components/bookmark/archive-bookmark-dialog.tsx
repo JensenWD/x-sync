@@ -17,14 +17,15 @@ interface Props {
   isPending?: boolean;
 }
 
-export function DeleteBookmarkDialog({ open, onOpenChange, onConfirm, isPending }: Props) {
+export function ArchiveBookmarkDialog({ open, onOpenChange, onConfirm, isPending }: Props) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="bg-card border-border max-w-sm">
         <DialogHeader>
-          <DialogTitle className="text-text-primary">Remove bookmark?</DialogTitle>
+          <DialogTitle className="text-text-primary">Archive bookmark?</DialogTitle>
           <DialogDescription className="text-text-secondary">
-            This removes the bookmark from your local database only. It stays saved on X.
+            This hides the post from your timeline. Its tags are kept so the auto-tagger can keep
+            learning from it.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter className="gap-2 sm:gap-0">
@@ -36,11 +37,10 @@ export function DeleteBookmarkDialog({ open, onOpenChange, onConfirm, isPending 
             Cancel
           </Button>
           <Button
-            variant="destructive"
             onClick={onConfirm}
             disabled={isPending}
           >
-            Remove
+            Archive
           </Button>
         </DialogFooter>
       </DialogContent>

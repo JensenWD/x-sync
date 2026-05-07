@@ -34,6 +34,50 @@ function parseList(value: string | null): string[] {
   return value.split(',').map((s) => s.trim()).filter(Boolean);
 }
 
+// Treat ⌘/Ctrl-click as multi-select (desktop). Touch users get long-press
+// via `useLongPress`.
+function isMultiSelectClick(e: React.MouseEvent): boolean {
+  return e.metaKey || e.ctrlKey;
+}
+
+const LONG_PRESS_MS = 450;
+
+// Build long-press handlers for a single render of a clickable row. The
+// returned object can be spread onto an element; `onLongPress` fires after a
+// 450ms touch-and-hold and the subsequent synthetic click is suppressed so it
+// doesn't double-fire as a regular tap.
+function makeLongPressHandlers(onLongPress: () => void) {
+  const state = { timer: null as ReturnType<typeof setTimeout> | null, fired: false };
+
+  function start() {
+    state.fired = false;
+    if (state.timer) clearTimeout(state.timer);
+    state.timer = setTimeout(() => {
+      state.fired = true;
+      onLongPress();
+    }, LONG_PRESS_MS);
+  }
+  function cancel() {
+    if (state.timer) {
+      clearTimeout(state.timer);
+      state.timer = null;
+    }
+  }
+  return {
+    onTouchStart: start,
+    onTouchEnd: cancel,
+    onTouchMove: cancel,
+    onTouchCancel: cancel,
+    onClickCapture: (e: React.MouseEvent) => {
+      if (state.fired) {
+        e.stopPropagation();
+        e.preventDefault();
+        state.fired = false;
+      }
+    },
+  };
+}
+
 interface SidebarProps {
   open?: boolean;
   onClose?: () => void;
@@ -135,7 +179,7 @@ export function Sidebar({ open = true, onClose }: SidebarProps) {
   return (
     <aside
       className={cn(
-        'w-[220px] shrink-0 flex flex-col h-screen border-r border-border bg-sidebar overflow-y-auto',
+        'w-[280px] md:w-[220px] shrink-0 flex flex-col h-screen border-r border-border bg-sidebar overflow-y-auto',
         // Mobile: fixed overlay that slides in/out
         'fixed inset-y-0 left-0 z-40 transition-transform duration-300 ease-in-out',
         open ? 'translate-x-0' : '-translate-x-full',
@@ -154,7 +198,8 @@ export function Sidebar({ open = true, onClose }: SidebarProps) {
           </div>
           <button
             onClick={onClose}
-            className="md:hidden p-1 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-secondary transition-colors"
+            aria-label="Close menu"
+            className="md:hidden flex items-center justify-center w-9 h-9 -mr-1 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-secondary transition-colors"
           >
             <XIcon className="w-4 h-4" />
           </button>
@@ -223,7 +268,8 @@ export function Sidebar({ open = true, onClose }: SidebarProps) {
             </span>
             <button
               onClick={() => setAddingFolder((v) => !v)}
-              className="text-text-secondary hover:text-text-primary transition-colors"
+              aria-label="New folder"
+              className="flex items-center justify-center w-7 h-7 -mr-1.5 rounded-md text-text-secondary hover:text-text-primary hover:bg-secondary transition-colors"
             >
               <PlusIcon className="w-3.5 h-3.5" />
             </button>
@@ -240,14 +286,15 @@ export function Sidebar({ open = true, onClose }: SidebarProps) {
                   if (e.key === 'Escape') setAddingFolder(false);
                 }}
                 placeholder="Folder name"
-                className="h-7 text-xs bg-secondary border-border"
+                className="h-9 md:h-7 text-sm md:text-xs bg-secondary border-border"
               />
-              <div className="flex gap-1 flex-wrap px-1">
+              <div className="flex gap-2 flex-wrap px-1 py-1">
                 {FOLDER_COLORS.map((c) => (
                   <button
                     key={c}
                     onClick={() => setNewFolderColor(c)}
-                    className="w-4 h-4 rounded-full ring-offset-background transition-all"
+                    aria-label={`Color ${c}`}
+                    className="w-6 h-6 md:w-4 md:h-4 rounded-full ring-offset-background transition-all"
                     style={{
                       backgroundColor: c,
                       outline: newFolderColor === c ? `2px solid ${c}` : 'none',
@@ -256,10 +303,10 @@ export function Sidebar({ open = true, onClose }: SidebarProps) {
                   />
                 ))}
               </div>
-              <div className="flex gap-1">
+              <div className="flex gap-1.5">
                 <Button
                   size="sm"
-                  className="h-6 text-xs flex-1 bg-[#1d9bf0] hover:bg-[#1a8cd8] text-white"
+                  className="h-8 md:h-6 text-xs flex-1 bg-[#1d9bf0] hover:bg-[#1a8cd8] text-white"
                   onClick={handleCreateFolder}
                   disabled={createFolder.isPending}
                 >
@@ -268,7 +315,7 @@ export function Sidebar({ open = true, onClose }: SidebarProps) {
                 <Button
                   size="sm"
                   variant="outline"
-                  className="h-6 text-xs"
+                  className="h-8 md:h-6 text-xs"
                   onClick={() => setAddingFolder(false)}
                 >
                   Cancel
@@ -288,14 +335,15 @@ export function Sidebar({ open = true, onClose }: SidebarProps) {
                 )}
               >
                 <button
-                  onClick={(e) => selectFolder(folder.id, e.metaKey || e.ctrlKey)}
-                  title="Click to filter — ⌘/Ctrl-click to toggle in multi-select"
+                  onClick={(e) => selectFolder(folder.id, isMultiSelectClick(e))}
+                  title="Click to filter — ⌘/Ctrl-click (or long-press) to toggle in multi-select"
                   className={cn(
-                    'flex-1 flex items-center justify-between px-3 py-1.5 text-sm min-w-0',
+                    'flex-1 flex items-center justify-between px-3 py-2 md:py-1.5 text-sm min-w-0',
                     isActive
                       ? 'text-text-primary'
                       : 'text-text-secondary hover:text-text-primary',
                   )}
+                  {...makeLongPressHandlers(() => selectFolder(folder.id, true))}
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <span
@@ -305,7 +353,7 @@ export function Sidebar({ open = true, onClose }: SidebarProps) {
                     <span className="truncate text-xs">{folder.name}</span>
                   </div>
                   {folder.bookmark_count !== undefined && (
-                    <span className="text-[13px] font-mono text-text-secondary shrink-0 group-hover/folder:hidden">
+                    <span className="text-[13px] font-mono text-text-secondary shrink-0 [@media(hover:hover)]:group-hover/folder:hidden">
                       {folder.bookmark_count}
                     </span>
                   )}
@@ -313,7 +361,7 @@ export function Sidebar({ open = true, onClose }: SidebarProps) {
                 <button
                   onClick={() => deleteFolder.mutate(folder.id)}
                   disabled={deleteFolder.isPending}
-                  className="hidden group-hover/folder:flex items-center pr-2 text-text-secondary hover:text-[#f4212e] transition-colors disabled:opacity-50"
+                  className="flex [@media(hover:hover)]:hidden [@media(hover:hover)]:group-hover/folder:flex items-center px-2 py-1 text-text-secondary hover:text-[#f4212e] transition-colors disabled:opacity-50"
                   title="Delete folder"
                 >
                   <Trash2Icon className="w-3.5 h-3.5" />
@@ -336,7 +384,8 @@ export function Sidebar({ open = true, onClose }: SidebarProps) {
               onClick={() => autoTag.mutate(undefined)}
               disabled={autoTag.isPending}
               title="Auto-classify untagged bookmarks"
-              className="text-text-secondary hover:text-[#1d9bf0] transition-colors disabled:opacity-50"
+              aria-label="Auto-classify untagged bookmarks"
+              className="flex items-center justify-center w-7 h-7 -mr-1.5 rounded-md text-text-secondary hover:text-[#1d9bf0] hover:bg-secondary transition-colors disabled:opacity-50"
             >
               {autoTag.isPending ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -351,14 +400,15 @@ export function Sidebar({ open = true, onClose }: SidebarProps) {
               return (
                 <button
                   key={tag.id}
-                  onClick={(e) => selectTag(tag.name, e.metaKey || e.ctrlKey)}
-                  title="Click to filter — ⌘/Ctrl-click to combine with other tags"
+                  onClick={(e) => selectTag(tag.name, isMultiSelectClick(e))}
+                  title="Click to filter — ⌘/Ctrl-click (or long-press) to combine with other tags"
                   className={cn(
-                    'text-[14px] px-2 py-0.5 rounded-full border transition-colors duration-150',
+                    'text-[14px] px-2.5 py-1 md:py-0.5 rounded-full border transition-colors duration-150',
                     isActive
                       ? 'bg-[#1d9bf0]/20 border-[#1d9bf0] text-[#1d9bf0]'
                       : 'border-border text-text-secondary hover:border-[#1d9bf0]/50 hover:text-text-primary',
                   )}
+                  {...makeLongPressHandlers(() => selectTag(tag.name, true))}
                 >
                   {tag.name}
                   <span className="ml-1 opacity-60">{tag.bookmark_count}</span>
@@ -391,10 +441,10 @@ export function Sidebar({ open = true, onClose }: SidebarProps) {
         <Button
           size="sm"
           variant="outline"
-          className="w-full h-7 text-xs border-border text-text-secondary hover:text-text-primary gap-1.5"
+          className="w-full h-9 md:h-7 text-xs border-border text-text-secondary hover:text-text-primary gap-1.5"
           onClick={() => setSyncDialogOpen(true)}
         >
-          <RefreshCw className="w-3 h-3" />
+          <RefreshCw className="w-3.5 h-3.5 md:w-3 md:h-3" />
           Sync Now
         </Button>
       </div>

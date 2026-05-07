@@ -1,11 +1,23 @@
 'use client';
 
-import { useState, Suspense } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { MenuIcon } from 'lucide-react';
 import { Sidebar } from './sidebar';
+import { MobileSyncButton } from './mobile-sync-button';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Lock body scroll while the mobile drawer is open so off-target touches
+  // don't scroll the feed underneath the backdrop.
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [sidebarOpen]);
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
@@ -23,16 +35,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Mobile top bar */}
-        <div className="md:hidden flex items-center gap-3 px-4 py-3 border-b border-border shrink-0">
+        <div className="md:hidden flex items-center gap-2 px-3 py-2 border-b border-border shrink-0">
           <button
             onClick={() => setSidebarOpen(true)}
-            className="p-1 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-secondary transition-colors"
+            aria-label="Open menu"
+            className="flex items-center justify-center w-11 h-11 rounded-md text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-secondary transition-colors"
           >
             <MenuIcon className="w-5 h-5" />
           </button>
-          <span className="font-semibold text-sm text-[var(--text-primary)] tracking-tight">
+          <span className="flex-1 font-semibold text-sm text-[var(--text-primary)] tracking-tight">
             X Bookmarks
           </span>
+          <Suspense>
+            <MobileSyncButton />
+          </Suspense>
         </div>
 
         {children}

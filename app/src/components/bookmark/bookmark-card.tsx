@@ -162,20 +162,21 @@ export function BookmarkCard({ bookmark }: BookmarkCardProps) {
           : 'ring-1 ring-white/10 hover:ring-white/20',
       )}
     >
-      {/* Selection checkbox — visible on hover or when selection mode is active */}
+      {/* Selection checkbox — always visible on touch; hover-revealed on pointer
+          devices (unless already selected or in selection mode). */}
       <div
         className={cn(
           'absolute top-2 right-2 z-20 transition-opacity',
           selected || selectionMode
             ? 'opacity-100'
-            : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100',
+            : 'opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:focus-within:opacity-100',
         )}
       >
         <Checkbox
           checked={selected}
           onCheckedChange={() => toggle(bookmark.id)}
           aria-label={selected ? 'Deselect bookmark' : 'Select bookmark'}
-          className="bg-card/80 backdrop-blur-sm border-white/30"
+          className="bg-card/80 backdrop-blur-sm border-white/30 h-5 w-5"
         />
       </div>
       <div className="flex gap-3">
@@ -347,9 +348,10 @@ export function BookmarkCard({ bookmark }: BookmarkCardProps) {
             </Tooltip>
           </div>
 
-          {/* Manage row — folder, tags, delete */}
+          {/* Manage row — folder, tags, archive. Always visible on touch;
+              hover-revealed on pointer devices. */}
           <div
-            className="flex items-center gap-1 -ml-2 opacity-0 group-hover:opacity-100 transition-opacity"
+            className="flex items-center gap-1 -ml-2 opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 transition-opacity"
             onClick={(e) => e.stopPropagation()}
           >
             <FolderDropdown bookmarkId={bookmark.id} bookmarkFolders={bookmark.folders} />

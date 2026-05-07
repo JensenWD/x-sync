@@ -50,20 +50,24 @@ export function BulkActionBar() {
 
   return (
     <>
-      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
+      <div
+        className="fixed left-1/2 -translate-x-1/2 z-30 pointer-events-none w-full sm:w-auto px-2 sm:px-0"
+        style={{ bottom: 'max(env(safe-area-inset-bottom), 1.5rem)' }}
+      >
         <div
-          className="pointer-events-auto flex items-center gap-1 px-2 py-1.5 rounded-full bg-popover/95 backdrop-blur-md border border-[var(--card-border)] shadow-[0_10px_40px_rgba(0,0,0,0.6)]"
+          className="pointer-events-auto mx-auto flex items-center gap-1 px-2 py-1.5 rounded-full bg-popover/95 backdrop-blur-md border border-[var(--card-border)] shadow-[0_10px_40px_rgba(0,0,0,0.6)] w-fit max-w-full"
           role="toolbar"
           aria-label="Bulk actions"
         >
           <button
             onClick={clear}
-            className="flex items-center gap-1.5 px-3 h-8 rounded-full text-[13px] text-text-primary hover:bg-secondary/60 transition-colors"
+            className="flex items-center gap-1.5 px-3 h-9 sm:h-8 rounded-full text-[13px] text-text-primary hover:bg-secondary/60 transition-colors shrink-0"
             title="Clear selection (Esc)"
+            aria-label={`Clear ${size} selected`}
           >
             <XIcon className="w-3.5 h-3.5" />
             <span className="font-mono">{size}</span>
-            <span className="text-text-secondary">selected</span>
+            <span className="text-text-secondary hidden sm:inline">selected</span>
           </button>
 
           <span className="w-px h-5 bg-[var(--card-border)] mx-0.5" />
@@ -85,25 +89,27 @@ export function BulkActionBar() {
           <button
             onClick={handleAutoTag}
             disabled={autoTag.isPending}
-            className="flex items-center gap-1.5 h-8 px-3 rounded-full text-[13px] text-text-primary hover:bg-secondary/60 disabled:opacity-50 transition-colors"
+            className="flex items-center gap-1.5 h-9 sm:h-8 px-3 rounded-full text-[13px] text-text-primary hover:bg-secondary/60 disabled:opacity-50 transition-colors shrink-0"
             title="Auto-tag selected"
+            aria-label="Auto-tag selected"
           >
             {autoTag.isPending ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
             ) : (
               <SparklesIcon className="w-3.5 h-3.5" />
             )}
-            Auto-tag
+            <span className="hidden sm:inline">Auto-tag</span>
           </button>
 
           <button
             onClick={() => setArchiveOpen(true)}
             disabled={bulkArchive.isPending}
-            className="flex items-center gap-1.5 h-8 px-3 rounded-full text-[13px] text-text-primary hover:bg-[#f4212e]/15 hover:text-[#f4212e] disabled:opacity-50 transition-colors"
+            className="flex items-center gap-1.5 h-9 sm:h-8 px-3 rounded-full text-[13px] text-text-primary hover:bg-[#f4212e]/15 hover:text-[#f4212e] disabled:opacity-50 transition-colors shrink-0"
             title="Archive selected"
+            aria-label="Archive selected"
           >
             <ArchiveIcon className="w-3.5 h-3.5" />
-            Archive
+            <span className="hidden sm:inline">Archive</span>
           </button>
         </div>
       </div>
@@ -173,12 +179,13 @@ function BulkTagsPopover({
       <PopoverTrigger
         disabled={disabled}
         className={cn(
-          'flex items-center gap-1.5 h-8 px-3 rounded-full text-[13px] text-text-primary hover:bg-secondary/60 disabled:opacity-50 transition-colors',
+          'flex items-center gap-1.5 h-9 sm:h-8 px-3 rounded-full text-[13px] text-text-primary hover:bg-secondary/60 disabled:opacity-50 transition-colors shrink-0',
         )}
         title="Add tags to selection"
+        aria-label="Add tags to selection"
       >
         {isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <TagIcon className="w-3.5 h-3.5" />}
-        Tag
+        <span className="hidden sm:inline">Tag</span>
       </PopoverTrigger>
       <PopoverContent className="w-72 p-2 bg-popover border-border" align="center" side="top">
         <p className="text-[11px] text-muted-foreground mb-1.5 uppercase tracking-wide font-semibold">
@@ -288,15 +295,16 @@ function BulkFoldersPopover({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         disabled={disabled}
-        className="flex items-center gap-1.5 h-8 px-3 rounded-full text-[13px] text-text-primary hover:bg-secondary/60 disabled:opacity-50 transition-colors"
+        className="flex items-center gap-1.5 h-9 sm:h-8 px-3 rounded-full text-[13px] text-text-primary hover:bg-secondary/60 disabled:opacity-50 transition-colors shrink-0"
         title="Add to folders"
+        aria-label="Add to folders"
       >
         {isPending ? (
           <Loader2 className="w-3.5 h-3.5 animate-spin" />
         ) : (
           <FolderIcon className="w-3.5 h-3.5" />
         )}
-        Folder
+        <span className="hidden sm:inline">Folder</span>
       </PopoverTrigger>
       <PopoverContent className="w-64 p-2 bg-popover border-border" align="center" side="top">
         <p className="text-[11px] text-muted-foreground mb-1.5 uppercase tracking-wide font-semibold">

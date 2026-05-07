@@ -174,9 +174,10 @@ function BookmarkGridInner() {
                 {searchInput && (
                   <button
                     onClick={() => updateSearch('')}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-[#1d9bf0] flex items-center justify-center hover:bg-[#1a8cd8]"
+                    aria-label="Clear search"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-[#1d9bf0] flex items-center justify-center hover:bg-[#1a8cd8]"
                   >
-                    <XIcon className="w-3 h-3 text-white" />
+                    <XIcon className="w-3.5 h-3.5 text-white" />
                   </button>
                 )}
               </div>
@@ -184,11 +185,12 @@ function BookmarkGridInner() {
               {/* Date range */}
               <DropdownMenu>
                 <DropdownMenuTrigger
-                  className="inline-flex items-center gap-1.5 h-9 px-3 rounded-full border border-[var(--card-border)] text-[var(--text-secondary)] text-[13px] bg-transparent hover:bg-[#1a1a1a] transition-colors shrink-0 whitespace-nowrap"
-                  title="Filter by bookmark date"
+                  className="inline-flex items-center gap-1.5 h-10 sm:h-9 px-3 rounded-full border border-[var(--card-border)] text-[var(--text-secondary)] text-[13px] bg-transparent hover:bg-[#1a1a1a] transition-colors shrink-0 whitespace-nowrap"
+                  title={`Filter by bookmark date — ${range.label}`}
+                  aria-label={`Date range: ${range.label}`}
                 >
                   <CalendarIcon className="w-4 h-4 shrink-0" />
-                  {range.label}
+                  <span className="hidden sm:inline">{range.label}</span>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent className="bg-[#1a1a1a] border-[var(--card-border)] rounded-xl">
                   {DATE_RANGES.map((r) => (
@@ -213,10 +215,12 @@ function BookmarkGridInner() {
               {/* Sort */}
               <DropdownMenu>
                 <DropdownMenuTrigger
-                  className="inline-flex items-center gap-1.5 h-9 px-3 rounded-full border border-[var(--card-border)] text-[var(--text-secondary)] text-[13px] bg-transparent hover:bg-[#1a1a1a] transition-colors shrink-0 whitespace-nowrap"
+                  className="inline-flex items-center gap-1.5 h-10 sm:h-9 px-3 rounded-full border border-[var(--card-border)] text-[var(--text-secondary)] text-[13px] bg-transparent hover:bg-[#1a1a1a] transition-colors shrink-0 whitespace-nowrap"
+                  title={`Sort — ${SORT_LABELS[sort]}`}
+                  aria-label={`Sort: ${SORT_LABELS[sort]}`}
                 >
                   <SlidersHorizontalIcon className="w-4 h-4 shrink-0" />
-                  {SORT_LABELS[sort]}
+                  <span className="hidden sm:inline">{SORT_LABELS[sort]}</span>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent className="bg-[#1a1a1a] border-[var(--card-border)] rounded-xl">
                   {Object.entries(SORT_LABELS).map(([value, label]) => (
@@ -303,7 +307,10 @@ function BookmarkGridInner() {
 
       {/* Feed */}
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-[640px] mx-auto px-4 py-4 pb-28">
+        <div
+          className="max-w-[640px] mx-auto px-4 py-4"
+          style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 7rem)' }}
+        >
           {isLoading ? (
             <div className="space-y-3">
               {Array.from({ length: 6 }).map((_, i) => (

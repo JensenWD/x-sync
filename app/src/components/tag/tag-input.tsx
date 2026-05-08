@@ -51,11 +51,12 @@ export function TagInput({ bookmarkId, bookmarkTags }: TagInputProps) {
     <Popover>
       {/* base-ui Trigger renders as a <button> — style it directly */}
       <PopoverTrigger
-        className="p-1.5 rounded-md text-[#71767b] hover:text-[#1d9bf0] hover:bg-secondary transition-colors"
+        className="p-3 sm:p-1.5 rounded-full sm:rounded-md text-[#71767b] hover:text-[#1d9bf0] hover:bg-secondary transition-colors"
         title="Tags"
+        aria-label="Tags"
         onClick={(e) => e.stopPropagation()}
       >
-        <TagIcon className="w-3.5 h-3.5" />
+        <TagIcon className="w-5 h-5 sm:w-3.5 sm:h-3.5" />
       </PopoverTrigger>
 
       <PopoverContent

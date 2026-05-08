@@ -1,4 +1,5 @@
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import type { BookmarksResponse } from '@/types';
 
 export interface BookmarkFilters {
@@ -41,13 +42,31 @@ export function useBookmarks(filters: BookmarkFilters = {}) {
   });
 }
 
+function postBulk(body: Record<string, unknown>) {
+  return fetch('/api/bookmarks/bulk', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).then((r) => r.json());
+}
+
 export function useArchiveBookmark() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => fetch(`/api/bookmarks/${id}`, { method: 'DELETE' }).then((r) => r.json()),
-    onSuccess: () => {
+    onSuccess: (_, id) => {
       queryClient.invalidateQueries({ queryKey: ['bookmarks'] });
       queryClient.invalidateQueries({ queryKey: ['sync-status'] });
+      toast('Post archived', {
+        action: {
+          label: 'Undo',
+          onClick: async () => {
+            await postBulk({ action: 'unarchive', ids: [id] });
+            queryClient.invalidateQueries({ queryKey: ['bookmarks'] });
+            queryClient.invalidateQueries({ queryKey: ['sync-status'] });
+          },
+        },
+      });
     },
   });
 }
@@ -115,23 +134,28 @@ interface BulkFolderParams {
   folder_ids: number[];
 }
 
-function postBulk(body: Record<string, unknown>) {
-  return fetch('/api/bookmarks/bulk', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  }).then((r) => r.json());
-}
-
 export function useBulkArchive() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ ids }: BulkArchiveParams) => postBulk({ action: 'archive', ids }),
-    onSuccess: () => {
+    onSuccess: (_, { ids }) => {
       queryClient.invalidateQueries({ queryKey: ['bookmarks'] });
       queryClient.invalidateQueries({ queryKey: ['sync-status'] });
       queryClient.invalidateQueries({ queryKey: ['folders'] });
       queryClient.invalidateQueries({ queryKey: ['tags'] });
+      const count = ids.length;
+      toast(`${count} post${count !== 1 ? 's' : ''} archived`, {
+        action: {
+          label: 'Undo',
+          onClick: async () => {
+            await postBulk({ action: 'unarchive', ids });
+            queryClient.invalidateQueries({ queryKey: ['bookmarks'] });
+            queryClient.invalidateQueries({ queryKey: ['sync-status'] });
+            queryClient.invalidateQueries({ queryKey: ['folders'] });
+            queryClient.invalidateQueries({ queryKey: ['tags'] });
+          },
+        },
+      });
     },
   });
 }

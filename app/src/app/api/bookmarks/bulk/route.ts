@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server';
 
 interface BulkBody {
   ids: number[];
-  action: 'archive' | 'add_tags' | 'add_folders';
+  action: 'archive' | 'unarchive' | 'add_tags' | 'add_folders';
   tags?: string[];
   folder_ids?: number[];
 }
@@ -41,6 +41,15 @@ export async function POST(req: NextRequest) {
       );
       const result = stmt.run(...ids);
       return Response.json({ ok: true, archived: result.changes });
+    }
+
+    case 'unarchive': {
+      const stmt = rawDb.prepare(
+        `UPDATE bookmarks SET archived_at = NULL, updated_at = unixepoch()
+         WHERE id IN (${placeholders})`,
+      );
+      const result = stmt.run(...ids);
+      return Response.json({ ok: true, restored: result.changes });
     }
 
     case 'add_tags': {

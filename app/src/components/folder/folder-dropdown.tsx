@@ -55,11 +55,12 @@ export function FolderDropdown({ bookmarkId, bookmarkFolders }: FolderDropdownPr
     <Popover>
       {/* base-ui Trigger renders as a <button> — style it directly */}
       <PopoverTrigger
-        className="p-1.5 rounded-md text-[#71767b] hover:text-[#1d9bf0] hover:bg-secondary transition-colors"
+        className="p-3 sm:p-1.5 rounded-full sm:rounded-md text-[#71767b] hover:text-[#1d9bf0] hover:bg-secondary transition-colors"
         title="Folders"
+        aria-label="Folders"
         onClick={(e) => e.stopPropagation()}
       >
-        <FolderIcon className="w-3.5 h-3.5" />
+        <FolderIcon className="w-5 h-5 sm:w-3.5 sm:h-3.5" />
       </PopoverTrigger>
 
       <PopoverContent

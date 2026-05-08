@@ -40,7 +40,20 @@ export function SuggestedTagChips({ bookmarkId, suggestions }: SuggestedTagChips
                 next.add(tag);
                 return next;
               });
-              addTag.mutate({ bookmarkId, name: tag });
+              addTag.mutate(
+                { bookmarkId, name: tag },
+                {
+                  // Roll back the optimistic hide so the user can retry —
+                  // otherwise a transient network failure silently eats the
+                  // suggestion until the next page fetch.
+                  onError: () =>
+                    setAccepted((prev) => {
+                      const next = new Set(prev);
+                      next.delete(tag);
+                      return next;
+                    }),
+                },
+              );
             }}
             className="flex items-center gap-0.5 px-1"
             title={`Add #${tag}`}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { formatDistanceToNow } from 'date-fns';
 import {
@@ -17,22 +17,27 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
 import { SyncDialog } from '@/components/sync/sync-dialog';
 import { useFolders, useCreateFolder, useDeleteFolder } from '@/hooks/use-folders';
 import { useTags } from '@/hooks/use-tags';
 import { useAutoTag } from '@/hooks/use-bookmarks';
 import { useSyncStatus } from '@/hooks/use-sync';
 import { cn } from '@/lib/utils';
+import { parseStringList } from '@/lib/url-params';
+import type { Folder, Tag } from '@/types';
 
 const FOLDER_COLORS = [
   '#1d9bf0', '#f91880', '#00ba7c', '#ffd400',
   '#ff7a00', '#7856ff', '#fa3939', '#71767b',
 ];
-
-function parseList(value: string | null): string[] {
-  if (!value) return [];
-  return value.split(',').map((s) => s.trim()).filter(Boolean);
-}
 
 // Treat ⌘/Ctrl-click as multi-select (desktop). Touch users get long-press
 // via `useLongPress`.
@@ -42,40 +47,180 @@ function isMultiSelectClick(e: React.MouseEvent): boolean {
 
 const LONG_PRESS_MS = 450;
 
-// Build long-press handlers for a single render of a clickable row. The
-// returned object can be spread onto an element; `onLongPress` fires after a
-// 450ms touch-and-hold and the subsequent synthetic click is suppressed so it
-// doesn't double-fire as a regular tap.
-function makeLongPressHandlers(onLongPress: () => void) {
-  const state = { timer: null as ReturnType<typeof setTimeout> | null, fired: false };
+// Long-press handlers for a clickable row on touch devices. `onLongPress`
+// fires after a 450ms touch-and-hold and the subsequent synthetic click is
+// suppressed so it doesn't double-fire as a regular tap.
+//
+// Implementation note: the timer + fired flag MUST live in a `useRef` rather
+// than be reallocated each render. The sidebar re-renders frequently (tag /
+// folder counts update via React Query), and if `start` and `cancel` close
+// over different `state` objects across renders, `cancel` becomes a no-op and
+// the timer fires after the user has already lifted off — triggering ghost
+// long-presses that flip the multi-select state. `onLongPressRef` is also
+// kept current so the callback always sees the latest props.
+function useLongPress(onLongPress: () => void) {
+  const onLongPressRef = useRef(onLongPress);
+  useEffect(() => {
+    onLongPressRef.current = onLongPress;
+  });
+  const state = useRef({ timer: null as ReturnType<typeof setTimeout> | null, fired: false });
 
-  function start() {
-    state.fired = false;
-    if (state.timer) clearTimeout(state.timer);
-    state.timer = setTimeout(() => {
-      state.fired = true;
-      onLongPress();
-    }, LONG_PRESS_MS);
-  }
-  function cancel() {
-    if (state.timer) {
-      clearTimeout(state.timer);
-      state.timer = null;
-    }
-  }
-  return {
-    onTouchStart: start,
-    onTouchEnd: cancel,
-    onTouchMove: cancel,
-    onTouchCancel: cancel,
-    onClickCapture: (e: React.MouseEvent) => {
-      if (state.fired) {
-        e.stopPropagation();
-        e.preventDefault();
-        state.fired = false;
-      }
-    },
-  };
+  return useMemo(
+    () => ({
+      onTouchStart: () => {
+        state.current.fired = false;
+        if (state.current.timer) clearTimeout(state.current.timer);
+        state.current.timer = setTimeout(() => {
+          state.current.fired = true;
+          onLongPressRef.current();
+        }, LONG_PRESS_MS);
+      },
+      onTouchEnd: () => {
+        if (state.current.timer) {
+          clearTimeout(state.current.timer);
+          state.current.timer = null;
+        }
+      },
+      onTouchMove: () => {
+        if (state.current.timer) {
+          clearTimeout(state.current.timer);
+          state.current.timer = null;
+        }
+      },
+      onTouchCancel: () => {
+        if (state.current.timer) {
+          clearTimeout(state.current.timer);
+          state.current.timer = null;
+        }
+      },
+      onClickCapture: (e: React.MouseEvent) => {
+        if (state.current.fired) {
+          e.stopPropagation();
+          e.preventDefault();
+          state.current.fired = false;
+        }
+      },
+    }),
+    [],
+  );
+}
+
+// Per-row components are extracted so each row can call `useLongPress` once
+// (hooks can't go inside `.map` callbacks). They also own their own confirm-
+// dialog state so the sidebar isn't tangled in row-level UI.
+
+interface FolderRowProps {
+  folder: Folder;
+  isActive: boolean;
+  onSelect: (id: number, additive: boolean) => void;
+  onDelete: (id: number) => void;
+  isDeleting: boolean;
+}
+
+function FolderRow({ folder, isActive, onSelect, onDelete, isDeleting }: FolderRowProps) {
+  const longPress = useLongPress(() => onSelect(folder.id, true));
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  return (
+    <>
+      <div
+        className={cn(
+          'group/folder flex items-center rounded-md transition-colors duration-150',
+          isActive ? 'bg-secondary' : 'hover:bg-secondary/50',
+        )}
+      >
+        <button
+          onClick={(e) => onSelect(folder.id, isMultiSelectClick(e))}
+          title="Click to filter — ⌘/Ctrl-click (or long-press) to toggle in multi-select"
+          className={cn(
+            'flex-1 flex items-center justify-between px-3 py-2 md:py-1.5 text-sm min-w-0',
+            isActive ? 'text-text-primary' : 'text-text-secondary hover:text-text-primary',
+          )}
+          {...longPress}
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <span
+              className="w-2 h-2 rounded-full shrink-0"
+              style={{ backgroundColor: folder.color ?? '#71767b' }}
+            />
+            <span className="truncate text-xs">{folder.name}</span>
+          </div>
+          {folder.bookmark_count !== undefined && (
+            <span className="text-[13px] font-mono text-text-secondary shrink-0 [@media(hover:hover)]:group-hover/folder:hidden">
+              {folder.bookmark_count}
+            </span>
+          )}
+        </button>
+        <button
+          onClick={() => setConfirmOpen(true)}
+          disabled={isDeleting}
+          aria-label={`Delete folder ${folder.name}`}
+          className="flex [@media(hover:hover)]:hidden [@media(hover:hover)]:group-hover/folder:flex items-center px-2 py-1 text-text-secondary hover:text-[#f4212e] transition-colors disabled:opacity-50"
+          title="Delete folder"
+        >
+          <Trash2Icon className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent className="bg-card border-border max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-text-primary">
+              Delete folder &ldquo;{folder.name}&rdquo;?
+            </DialogTitle>
+            <DialogDescription className="text-text-secondary">
+              The folder is removed but the bookmarks inside it stay in your archive.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              className="border-border text-text-primary"
+              onClick={() => setConfirmOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                onDelete(folder.id);
+                setConfirmOpen(false);
+              }}
+              disabled={isDeleting}
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+interface TagButtonProps {
+  tag: Tag;
+  isActive: boolean;
+  onSelect: (name: string, additive: boolean) => void;
+}
+
+function TagButton({ tag, isActive, onSelect }: TagButtonProps) {
+  const longPress = useLongPress(() => onSelect(tag.name, true));
+  return (
+    <button
+      onClick={(e) => onSelect(tag.name, isMultiSelectClick(e))}
+      title="Click to filter — ⌘/Ctrl-click (or long-press) to combine with other tags"
+      className={cn(
+        'text-[14px] px-2.5 py-1 md:py-0.5 rounded-full border transition-colors duration-150',
+        isActive
+          ? 'bg-[#1d9bf0]/20 border-[#1d9bf0] text-[#1d9bf0]'
+          : 'border-border text-text-secondary hover:border-[#1d9bf0]/50 hover:text-text-primary',
+      )}
+      {...longPress}
+    >
+      {tag.name}
+      <span className="ml-1 opacity-60">{tag.bookmark_count}</span>
+    </button>
+  );
 }
 
 interface SidebarProps {
@@ -99,8 +244,8 @@ export function Sidebar({ open = true, onClose }: SidebarProps) {
   const deleteFolder = useDeleteFolder();
   const autoTag = useAutoTag();
 
-  const activeFolderIds = parseList(searchParams.get('folder_id'));
-  const activeTagNames = parseList(searchParams.get('tag'));
+  const activeFolderIds = parseStringList(searchParams.get('folder_id'));
+  const activeTagNames = parseStringList(searchParams.get('tag'));
   const untaggedActive = searchParams.get('untagged') === '1';
 
   function pushParams(updater: (params: URLSearchParams) => void) {
@@ -324,51 +469,16 @@ export function Sidebar({ open = true, onClose }: SidebarProps) {
             </div>
           )}
 
-          {folders.map((folder) => {
-            const isActive = activeFolderIds.includes(String(folder.id));
-            return (
-              <div
-                key={folder.id}
-                className={cn(
-                  'group/folder flex items-center rounded-md transition-colors duration-150',
-                  isActive ? 'bg-secondary' : 'hover:bg-secondary/50',
-                )}
-              >
-                <button
-                  onClick={(e) => selectFolder(folder.id, isMultiSelectClick(e))}
-                  title="Click to filter — ⌘/Ctrl-click (or long-press) to toggle in multi-select"
-                  className={cn(
-                    'flex-1 flex items-center justify-between px-3 py-2 md:py-1.5 text-sm min-w-0',
-                    isActive
-                      ? 'text-text-primary'
-                      : 'text-text-secondary hover:text-text-primary',
-                  )}
-                  {...makeLongPressHandlers(() => selectFolder(folder.id, true))}
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span
-                      className="w-2 h-2 rounded-full shrink-0"
-                      style={{ backgroundColor: folder.color ?? '#71767b' }}
-                    />
-                    <span className="truncate text-xs">{folder.name}</span>
-                  </div>
-                  {folder.bookmark_count !== undefined && (
-                    <span className="text-[13px] font-mono text-text-secondary shrink-0 [@media(hover:hover)]:group-hover/folder:hidden">
-                      {folder.bookmark_count}
-                    </span>
-                  )}
-                </button>
-                <button
-                  onClick={() => deleteFolder.mutate(folder.id)}
-                  disabled={deleteFolder.isPending}
-                  className="flex [@media(hover:hover)]:hidden [@media(hover:hover)]:group-hover/folder:flex items-center px-2 py-1 text-text-secondary hover:text-[#f4212e] transition-colors disabled:opacity-50"
-                  title="Delete folder"
-                >
-                  <Trash2Icon className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            );
-          })}
+          {folders.map((folder) => (
+            <FolderRow
+              key={folder.id}
+              folder={folder}
+              isActive={activeFolderIds.includes(String(folder.id))}
+              onSelect={selectFolder}
+              onDelete={(id) => deleteFolder.mutate(id)}
+              isDeleting={deleteFolder.isPending}
+            />
+          ))}
           {folders.length === 0 && !addingFolder && (
             <p className="px-3 text-[14px] text-muted-foreground italic">No folders yet</p>
           )}
@@ -395,26 +505,14 @@ export function Sidebar({ open = true, onClose }: SidebarProps) {
             </button>
           </div>
           <div className="px-2 flex flex-wrap gap-1">
-            {tags.map((tag) => {
-              const isActive = activeTagNames.includes(tag.name);
-              return (
-                <button
-                  key={tag.id}
-                  onClick={(e) => selectTag(tag.name, isMultiSelectClick(e))}
-                  title="Click to filter — ⌘/Ctrl-click (or long-press) to combine with other tags"
-                  className={cn(
-                    'text-[14px] px-2.5 py-1 md:py-0.5 rounded-full border transition-colors duration-150',
-                    isActive
-                      ? 'bg-[#1d9bf0]/20 border-[#1d9bf0] text-[#1d9bf0]'
-                      : 'border-border text-text-secondary hover:border-[#1d9bf0]/50 hover:text-text-primary',
-                  )}
-                  {...makeLongPressHandlers(() => selectTag(tag.name, true))}
-                >
-                  {tag.name}
-                  <span className="ml-1 opacity-60">{tag.bookmark_count}</span>
-                </button>
-              );
-            })}
+            {tags.map((tag) => (
+              <TagButton
+                key={tag.id}
+                tag={tag}
+                isActive={activeTagNames.includes(tag.name)}
+                onSelect={selectTag}
+              />
+            ))}
             {tags.length === 0 && (
               <p className="px-1 text-[14px] text-muted-foreground italic">No tags yet</p>
             )}

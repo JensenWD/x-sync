@@ -104,7 +104,7 @@ Content scripts re-inject on every navigation. Use an `__xSyncInterceptInstalled
 
 The bookmark list is driven entirely by URL search params — sidebar, toolbar, and chips all read/write the same params so reloads and shares preserve state.
 
-- `folder_id` and `tag` are **comma-separated lists** (e.g. `?folder_id=1,3&tag=ai,research`). Use `parseList`/`parseIdList` (defined in both `bookmark-grid.tsx` and `sidebar.tsx`) to read them.
+- `folder_id` and `tag` are **comma-separated lists** (e.g. `?folder_id=1,3&tag=ai,research`). Use `parseStringList`/`parseIdList` from `lib/url-params.ts` to read them — keep all callers on the shared helpers so semantics stay aligned.
 - Semantics: `folder_id` is **any-of** (bookmark in ANY listed folder matches); `tag` is **all-of** (bookmark must have EVERY listed tag — implemented as a `COUNT(DISTINCT name) = N` subquery).
 - `untagged=1` filters to bookmarks with no tags. Sidebar treats `untagged`, `folder_id`, and `tag` as mutually exclusive — selecting one clears the others.
 - Date range: the URL uses `range` with an id (`1d`, `7d`, `30d`, `90d`, `365d`, or absent for "all time"). The grid resolves the id against the `DATE_RANGES` table and passes `range_days` (integer day count) to the API. The API only accepts `range_days`; do not introduce raw timestamp params.

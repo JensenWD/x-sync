@@ -1,6 +1,17 @@
-import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import type { BookmarksResponse } from '@/types';
+
+// Archiving (manual or bulk) can change folder/tag association counts and the
+// untagged_count surfaced in sync-status, so all four query keys are
+// invalidated together. Keep in one place so single + bulk + Undo paths stay
+// in sync.
+function invalidateAfterArchiveChange(qc: QueryClient) {
+  qc.invalidateQueries({ queryKey: ['bookmarks'] });
+  qc.invalidateQueries({ queryKey: ['sync-status'] });
+  qc.invalidateQueries({ queryKey: ['folders'] });
+  qc.invalidateQueries({ queryKey: ['tags'] });
+}
 
 export interface BookmarkFilters {
   search?: string;
@@ -55,15 +66,13 @@ export function useArchiveBookmark() {
   return useMutation({
     mutationFn: (id: number) => fetch(`/api/bookmarks/${id}`, { method: 'DELETE' }).then((r) => r.json()),
     onSuccess: (_, id) => {
-      queryClient.invalidateQueries({ queryKey: ['bookmarks'] });
-      queryClient.invalidateQueries({ queryKey: ['sync-status'] });
+      invalidateAfterArchiveChange(queryClient);
       toast('Post archived', {
         action: {
           label: 'Undo',
           onClick: async () => {
             await postBulk({ action: 'unarchive', ids: [id] });
-            queryClient.invalidateQueries({ queryKey: ['bookmarks'] });
-            queryClient.invalidateQueries({ queryKey: ['sync-status'] });
+            invalidateAfterArchiveChange(queryClient);
           },
         },
       });
@@ -103,19 +112,56 @@ export function useRemoveTag() {
   });
 }
 
+interface AutoTagResponse {
+  status: 'success' | 'aborted' | 'error';
+  reason?: string;
+  tag?: string;
+  share?: number;
+  tagged_count?: number;
+  skipped_count?: number;
+  tags_active?: string[];
+  error?: string;
+}
+
 export function useAutoTag() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useMutation<AutoTagResponse, Error, number[] | undefined>({
     mutationFn: (bookmarkIds?: number[]) =>
       fetch('/api/bookmarks/auto-tag', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(bookmarkIds ? { bookmarkIds } : {}),
       }).then((r) => r.json()),
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['bookmarks'] });
       queryClient.invalidateQueries({ queryKey: ['tags'] });
       queryClient.invalidateQueries({ queryKey: ['sync-status'] });
+
+      // Surface every terminal state — the route's blast-radius abort and the
+      // "no active tags" / "nothing met threshold" paths all return HTTP 200,
+      // so without this the user would silently see no change after clicking
+      // Auto-tag and assume the feature is broken.
+      if (data?.status === 'aborted') {
+        toast.error('Auto-tag aborted', {
+          description: data.reason ?? 'Classifier refused to apply tags.',
+        });
+        return;
+      }
+      if (data?.status === 'error') {
+        toast.error('Auto-tag failed', { description: data.error });
+        return;
+      }
+      const tagged = data?.tagged_count ?? 0;
+      if (tagged > 0) {
+        toast(`Auto-tagged ${tagged} bookmark${tagged !== 1 ? 's' : ''}`);
+      } else if ((data?.tags_active?.length ?? 0) < 2) {
+        toast('Need ≥ 2 tags with 20+ manual examples each before auto-tag can run');
+      } else {
+        toast('No bookmarks crossed the confidence threshold');
+      }
+    },
+    onError: (err) => {
+      toast.error('Auto-tag failed', { description: err.message });
     },
   });
 }
@@ -139,20 +185,14 @@ export function useBulkArchive() {
   return useMutation({
     mutationFn: ({ ids }: BulkArchiveParams) => postBulk({ action: 'archive', ids }),
     onSuccess: (_, { ids }) => {
-      queryClient.invalidateQueries({ queryKey: ['bookmarks'] });
-      queryClient.invalidateQueries({ queryKey: ['sync-status'] });
-      queryClient.invalidateQueries({ queryKey: ['folders'] });
-      queryClient.invalidateQueries({ queryKey: ['tags'] });
+      invalidateAfterArchiveChange(queryClient);
       const count = ids.length;
       toast(`${count} post${count !== 1 ? 's' : ''} archived`, {
         action: {
           label: 'Undo',
           onClick: async () => {
             await postBulk({ action: 'unarchive', ids });
-            queryClient.invalidateQueries({ queryKey: ['bookmarks'] });
-            queryClient.invalidateQueries({ queryKey: ['sync-status'] });
-            queryClient.invalidateQueries({ queryKey: ['folders'] });
-            queryClient.invalidateQueries({ queryKey: ['tags'] });
+            invalidateAfterArchiveChange(queryClient);
           },
         },
       });

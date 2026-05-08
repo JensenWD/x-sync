@@ -182,13 +182,14 @@ export async function GET(req: NextRequest) {
   // Heuristic tag suggestions — pattern-matched against the user's manual-tag
   // corpus. Cheap to compute (cached signatures) and attached to the same
   // response so the card can render click-to-add chips without an extra round
-  // trip.
-  const suggestionInputs = bookmarks.map((b) => ({
-    id: b.id,
-    full_text: b.full_text,
-    author_handle: b.author_handle,
-    quoted_tweet: b.quoted_tweet ? JSON.stringify(b.quoted_tweet) : null,
-    existing_tag_names: new Set(b.tags.map((t) => t.name)),
+  // trip. Pass the raw row so we don't re-stringify the just-parsed
+  // quoted_tweet JSON.
+  const suggestionInputs = rows.map((row, i) => ({
+    id: row.id,
+    full_text: row.full_text,
+    author_handle: row.author_handle,
+    quoted_tweet: row.quoted_tweet,
+    existing_tag_names: new Set(bookmarks[i].tags.map((t) => t.name)),
   }));
   const suggestions = suggestTagsForMany(suggestionInputs);
   for (const b of bookmarks) {

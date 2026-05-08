@@ -26,6 +26,7 @@ import { SelectionProvider, useSelection } from './selection-context';
 import { useBookmarks } from '@/hooks/use-bookmarks';
 import { useFolders } from '@/hooks/use-folders';
 import { useDebounce } from '@/hooks/use-debounce';
+import { parseIdList, parseStringList } from '@/lib/url-params';
 
 const SORT_LABELS: Record<string, string> = {
   bookmarked_at_desc: 'Newest first',
@@ -43,17 +44,6 @@ const DATE_RANGES: Array<{ id: string; label: string; days: number | null }> = [
   { id: '365d', label: 'Past year', days: 365 },
 ];
 
-function parseList(value: string | null): string[] {
-  if (!value) return [];
-  return value.split(',').map((s) => s.trim()).filter(Boolean);
-}
-
-function parseIntList(value: string | null): number[] {
-  return parseList(value)
-    .map((s) => parseInt(s, 10))
-    .filter((n) => Number.isFinite(n) && n > 0);
-}
-
 function BookmarkGridInner() {
   const router = useRouter();
   const pathname = usePathname();
@@ -64,15 +54,18 @@ function BookmarkGridInner() {
   const [searchInput, setSearchInput] = useState(searchParams.get('search') || '');
   const debouncedSearch = useDebounce(searchInput, 300);
 
-  const folderIds = useMemo(() => parseIntList(searchParams.get('folder_id')), [searchParams]);
-  const activeTags = useMemo(() => parseList(searchParams.get('tag')), [searchParams]);
+  const folderIds = useMemo(() => parseIdList(searchParams.get('folder_id')), [searchParams]);
+  const activeTags = useMemo(() => parseStringList(searchParams.get('tag')), [searchParams]);
   const untagged = searchParams.get('untagged') === '1';
   const sort = searchParams.get('sort') || 'bookmarked_at_desc';
   const rangeId = searchParams.get('range') || 'all';
   const range = DATE_RANGES.find((r) => r.id === rangeId) ?? DATE_RANGES[0];
 
   const { data: folders = [] } = useFolders();
-  const activeFolders = folders.filter((f) => folderIds.includes(f.id));
+  const activeFolders = useMemo(
+    () => folders.filter((f) => folderIds.includes(f.id)),
+    [folders, folderIds],
+  );
 
   function setParam(key: string, value: string | null) {
     const next = new URLSearchParams(searchParams.toString());
@@ -83,7 +76,7 @@ function BookmarkGridInner() {
 
   function removeFromList(key: string, value: string) {
     const next = new URLSearchParams(searchParams.toString());
-    const values = parseList(next.get(key)).filter((v) => v !== value);
+    const values = parseStringList(next.get(key)).filter((v) => v !== value);
     if (values.length === 0) next.delete(key);
     else next.set(key, values.join(','));
     router.push(`${pathname}?${next.toString()}`);
@@ -110,8 +103,16 @@ function BookmarkGridInner() {
     per_page: 40,
   });
 
-  const bookmarks = Array.from(
-    new Map((data?.pages.flatMap((p) => p.data) ?? []).map((b) => [b.id, b])).values(),
+  // Dedup across paginated pages — React Query's infinite cache can briefly
+  // hold the same bookmark in two pages (e.g. when a recently-bookmarked tweet
+  // shifts page boundaries during refetch). Memoised so bookmark cards aren't
+  // remounted on every parent render.
+  const bookmarks = useMemo(
+    () =>
+      Array.from(
+        new Map((data?.pages.flatMap((p) => p.data) ?? []).map((b) => [b.id, b])).values(),
+      ),
+    [data],
   );
   const total = data?.pages[0]?.meta.total;
 

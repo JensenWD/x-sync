@@ -15,6 +15,15 @@ export async function POST(req: NextRequest) {
 
   try {
     const result = runAutoTag(bookmarkIds);
+    if (result.aborted) {
+      return Response.json({
+        status: 'aborted',
+        reason: result.aborted.reason,
+        tag: result.aborted.tag,
+        share: result.aborted.share,
+        tags_active: result.activeTags,
+      });
+    }
     return Response.json({
       status: 'success',
       tagged_count: result.taggedCount,

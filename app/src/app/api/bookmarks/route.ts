@@ -1,4 +1,5 @@
 import { rawDb } from '@/lib/db/client';
+import { suggestTagsForMany } from '@/lib/tag-suggester';
 import { NextRequest } from 'next/server';
 
 interface BookmarkRow {
@@ -46,7 +47,8 @@ function parseBookmark(row: BookmarkRow) {
     lang: row.lang,
     bookmarked_at: row.bookmarked_at,
     folders: JSON.parse(row.folders_json || '[]'),
-    tags: JSON.parse(row.tags_json || '[]'),
+    tags: JSON.parse(row.tags_json || '[]') as { id: number; name: string; source: string }[],
+    suggested_tags: [] as string[],
   };
 }
 
@@ -175,9 +177,26 @@ export async function GET(req: NextRequest) {
     LIMIT ? OFFSET ?
   `;
   const rows = rawDb.prepare(dataSql).all(...params, perPage, offset) as BookmarkRow[];
+  const bookmarks = rows.map(parseBookmark);
+
+  // Heuristic tag suggestions — pattern-matched against the user's manual-tag
+  // corpus. Cheap to compute (cached signatures) and attached to the same
+  // response so the card can render click-to-add chips without an extra round
+  // trip.
+  const suggestionInputs = bookmarks.map((b) => ({
+    id: b.id,
+    full_text: b.full_text,
+    author_handle: b.author_handle,
+    quoted_tweet: b.quoted_tweet ? JSON.stringify(b.quoted_tweet) : null,
+    existing_tag_names: new Set(b.tags.map((t) => t.name)),
+  }));
+  const suggestions = suggestTagsForMany(suggestionInputs);
+  for (const b of bookmarks) {
+    b.suggested_tags = suggestions.get(b.id) ?? [];
+  }
 
   return Response.json({
-    data: rows.map(parseBookmark),
+    data: bookmarks,
     meta: {
       total,
       per_page: perPage,

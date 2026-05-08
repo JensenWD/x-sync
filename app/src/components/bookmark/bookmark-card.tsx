@@ -10,6 +10,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { FolderDropdown } from '@/components/folder/folder-dropdown';
 import { TagInput } from '@/components/tag/tag-input';
 import { ArchiveBookmarkDialog } from './archive-bookmark-dialog';
+import { SuggestedTagChips } from './suggested-tag-chips';
 import { useArchiveBookmark } from '@/hooks/use-bookmarks';
 import { useSelection } from './selection-context';
 import { Card } from '@/components/ui/card';
@@ -35,7 +36,7 @@ function Avatar({ src, name, handle }: { src: string | null; name: string; handl
   if (!src || failed) {
     return (
       <div
-        className="w-10 h-10 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0 select-none"
+        className="w-8 h-8 rounded-full flex items-center justify-center text-white text-[11px] font-semibold shrink-0 select-none"
         style={{ backgroundColor: color }}
       >
         {initials}
@@ -43,12 +44,12 @@ function Avatar({ src, name, handle }: { src: string | null; name: string; handl
     );
   }
   return (
-    <div className="w-10 h-10 rounded-full overflow-hidden shrink-0">
+    <div className="w-8 h-8 rounded-full overflow-hidden shrink-0">
       <Image
         src={src}
         alt={name}
-        width={40}
-        height={40}
+        width={32}
+        height={32}
         className="w-full h-full object-cover"
         unoptimized
         onError={() => setFailed(true)}
@@ -191,25 +192,26 @@ export function BookmarkCard({ bookmark }: BookmarkCardProps) {
 
         {/* Content column */}
         <div className="flex-1 min-w-0">
-          {/* Author row */}
-          <div className="flex items-center gap-1 mb-0.5">
-            <span className="text-[19px] font-bold text-[var(--text-primary)] truncate">
-              {bookmark.author_name}
-            </span>
-            {bookmark.author_verified && (
-              <BadgeCheckIcon className="w-[22px] h-[22px] text-[#1d9bf0] shrink-0" />
-            )}
-            <span className="text-[19px] text-[var(--text-secondary)] truncate">
-              @{bookmark.author_handle}
-            </span>
-            {relativeTime && (
-              <>
-                <span className="text-[var(--text-secondary)]">·</span>
-                <span className="text-[19px] text-[var(--text-secondary)] shrink-0 hover:underline">
-                  {relativeTime}
-                </span>
-              </>
-            )}
+          {/* Author row — single line on sm+, stacked on mobile so the
+              @handle and timestamp don't crowd out the display name. */}
+          <div className="mb-1 flex flex-col sm:flex-row sm:items-center sm:gap-1 min-w-0">
+            <div className="flex items-center gap-1 min-w-0">
+              <span className="text-[17px] sm:text-[19px] font-bold text-[var(--text-primary)] truncate">
+                {bookmark.author_name}
+              </span>
+              {bookmark.author_verified && (
+                <BadgeCheckIcon className="w-[18px] h-[18px] sm:w-[22px] sm:h-[22px] text-[#1d9bf0] shrink-0" />
+              )}
+            </div>
+            <div className="flex items-center gap-1 min-w-0 text-[14px] sm:text-[19px] text-[var(--text-secondary)]">
+              <span className="truncate">@{bookmark.author_handle}</span>
+              {relativeTime && (
+                <>
+                  <span>·</span>
+                  <span className="shrink-0 hover:underline">{relativeTime}</span>
+                </>
+              )}
+            </div>
           </div>
 
           {/* Tweet text */}
@@ -307,6 +309,14 @@ export function BookmarkCard({ bookmark }: BookmarkCardProps) {
             </div>
           )}
 
+          {/* Suggested tags — heuristic, click to add */}
+          {bookmark.suggested_tags && bookmark.suggested_tags.length > 0 && (
+            <SuggestedTagChips
+              bookmarkId={bookmark.id}
+              suggestions={bookmark.suggested_tags}
+            />
+          )}
+
           {/* Engagement metrics row */}
           <div
             className="flex items-center gap-5 -ml-2 mt-1"
@@ -358,10 +368,11 @@ export function BookmarkCard({ bookmark }: BookmarkCardProps) {
             <TagInput bookmarkId={bookmark.id} bookmarkTags={bookmark.tags} />
             <button
               title="Archive bookmark"
-              className="flex items-center p-2 rounded-full text-[var(--text-secondary)] hover:text-[var(--accent)] hover:bg-[var(--accent)]/10 transition-colors"
+              aria-label="Archive bookmark"
+              className="flex items-center p-3 sm:p-2 rounded-full text-[var(--text-secondary)] hover:text-[var(--accent)] hover:bg-[var(--accent)]/10 transition-colors"
               onClick={() => setArchiveOpen(true)}
             >
-              <ArchiveIcon className="w-[18px] h-[18px]" />
+              <ArchiveIcon className="w-5 h-5 sm:w-[18px] sm:h-[18px]" />
             </button>
           </div>
         </div>

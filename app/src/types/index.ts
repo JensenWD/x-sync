@@ -41,6 +41,7 @@ export interface Bookmark {
   bookmarked_at: number | null;
   folders: Folder[];
   tags: Tag[];
+  suggested_tags?: string[];
 }
 
 export interface BookmarkMeta {

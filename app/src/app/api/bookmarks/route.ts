@@ -54,11 +54,46 @@ const BASE_SELECT = `
   FROM bookmarks b
 `;
 
+const MAX_TAG_FILTERS = 20;
+const MAX_TAG_LENGTH = 100;
+
+/**
+ * `tags` may repeat and/or hold a comma-separated list; `tag` is the older
+ * single-tag form the facet bar still emits for shareable links.
+ *
+ * Names are lowercased to match `bookmark-query.ts` and the write path in
+ * `/api/bookmarks/[id]/tags`, which stores every tag lowercased — a shared or
+ * hand-edited link spelling a tag `AI` must still find the stored `ai`.
+ */
+function readTagFilters(searchParams: URLSearchParams) {
+  const raw = [...searchParams.getAll('tags'), ...searchParams.getAll('tag')]
+    .flatMap((value) => value.split(','))
+    .map((value) => value.trim().normalize('NFKC').toLocaleLowerCase())
+    .filter((value) => value.length > 0);
+  return [...new Set(raw)];
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
   const search = searchParams.get('search')?.trim();
   const folderId = searchParams.get('folder_id');
-  const tagName = searchParams.get('tag');
+  const tagNames = readTagFilters(searchParams);
+  const tagMode = searchParams.get('tag_mode') ?? 'all';
+  if (tagMode !== 'all' && tagMode !== 'any') {
+    return Response.json({ error: 'tag_mode must be "all" or "any"' }, { status: 400 });
+  }
+  if (tagNames.length > MAX_TAG_FILTERS) {
+    return Response.json(
+      { error: `at most ${MAX_TAG_FILTERS} tag filters may be combined` },
+      { status: 400 },
+    );
+  }
+  if (tagNames.some((name) => name.length > MAX_TAG_LENGTH)) {
+    return Response.json(
+      { error: `each tag filter must be at most ${MAX_TAG_LENGTH} characters` },
+      { status: 400 },
+    );
+  }
   const sort = searchParams.get('sort') || 'bookmarked_at_desc';
   const rawPerPage = searchParams.get('per_page') ?? '40';
   const rawPage = searchParams.get('page') ?? '1';
@@ -101,9 +136,21 @@ export async function GET(req: NextRequest) {
     params.push(Number(folderId));
   }
 
-  if (tagName) {
-    conditions.push(`EXISTS (SELECT 1 FROM bookmark_tags bt2 JOIN tags t2 ON t2.id = bt2.tag_id WHERE bt2.bookmark_id = b.id AND t2.name = ?)`);
-    params.push(tagName);
+  if (tagNames.length > 0) {
+    if (tagMode === 'any') {
+      const placeholders = tagNames.map(() => '?').join(', ');
+      conditions.push(
+        `EXISTS (SELECT 1 FROM bookmark_tags bt2 JOIN tags t2 ON t2.id = bt2.tag_id WHERE bt2.bookmark_id = b.id AND lower(t2.name) IN (${placeholders}))`,
+      );
+      params.push(...tagNames);
+    } else {
+      for (const name of tagNames) {
+        conditions.push(
+          `EXISTS (SELECT 1 FROM bookmark_tags bt2 JOIN tags t2 ON t2.id = bt2.tag_id WHERE bt2.bookmark_id = b.id AND lower(t2.name) = ?)`,
+        );
+        params.push(name);
+      }
+    }
   }
 
   const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';

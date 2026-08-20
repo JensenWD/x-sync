@@ -1,52 +1,43 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import Image from 'next/image';
-import { formatDistanceToNow } from 'date-fns';
-import { ChevronDownIcon, ChevronUpIcon, ExternalLinkIcon, Trash2Icon } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { FolderDropdown } from '@/components/folder/folder-dropdown';
-import { TagInput } from '@/components/tag/tag-input';
-import { DeleteBookmarkDialog } from './delete-bookmark-dialog';
-import { useDeleteBookmark } from '@/hooks/use-bookmarks';
-import { cn } from '@/lib/utils';
+import { cn, compactAge } from '@/lib/utils';
+import { useLibraryFilters } from '@/hooks/use-library-filters';
 import type { Bookmark } from '@/types';
 
-const HANDLE_COLORS = [
-  '#1d9bf0', '#f91880', '#00ba7c', '#ffd400',
-  '#ff7a00', '#7856ff', '#fa3939',
-];
-
-function getHandleColor(handle: string) {
-  let hash = 0;
-  for (const c of handle) hash = (hash * 31 + c.charCodeAt(0)) & 0xffffffff;
-  return HANDLE_COLORS[Math.abs(hash) % HANDLE_COLORS.length];
-}
-
-function Avatar({ src, name, handle }: { src: string | null; name: string; handle: string }) {
+export function PostAvatar({
+  src,
+  name,
+  className,
+}: {
+  src: string | null;
+  name: string;
+  className?: string;
+}) {
   const [failed, setFailed] = useState(false);
   const initials = name?.slice(0, 2).toUpperCase() || '??';
-  const color = getHandleColor(handle);
 
   if (!src || failed) {
     return (
       <div
-        className="w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0 select-none"
-        style={{ backgroundColor: color }}
+        className={cn(
+          'flex shrink-0 items-center justify-center rounded-full bg-[#8d8d95] font-bold text-background select-none',
+          className,
+        )}
       >
         {initials}
       </div>
     );
   }
   return (
-    <div className="w-9 h-9 rounded-full overflow-hidden shrink-0">
+    <div className={cn('relative shrink-0 overflow-hidden rounded-full', className)}>
       <Image
         src={src}
         alt={name}
-        width={36}
-        height={36}
-        className="w-full h-full object-cover"
+        fill
+        sizes="48px"
+        className="object-cover"
         unoptimized
         onError={() => setFailed(true)}
       />
@@ -54,231 +45,130 @@ function Avatar({ src, name, handle }: { src: string | null; name: string; handl
   );
 }
 
-interface BookmarkCardProps {
-  bookmark: Bookmark;
+/** First image plus a "+N" marker — the card teases media, the reader shows it all. */
+export function PostMedia({ urls, className }: { urls: string[]; className?: string }) {
+  if (urls.length === 0) return null;
+  return (
+    <div className={cn('relative w-full overflow-hidden rounded-[10px] bg-[#16161a] md:rounded-[8px]', className)}>
+      <Image
+        src={urls[0]}
+        alt="Post media"
+        fill
+        className="object-cover"
+        unoptimized
+        sizes="(min-width: 1280px) 33vw, (min-width: 768px) 50vw, 100vw"
+      />
+      {urls.length > 1 && (
+        <span className="absolute right-2 bottom-2 rounded bg-black/60 px-1.5 py-0.5 font-mono text-[10px] text-text-primary">
+          +{urls.length - 1}
+        </span>
+      )}
+    </div>
+  );
 }
 
-export function BookmarkCard({ bookmark }: BookmarkCardProps) {
-  const [expanded, setExpanded] = useState(false);
-  const [textCanExpand, setTextCanExpand] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const textRef = useRef<HTMLParagraphElement>(null);
-  const deleteBookmark = useDeleteBookmark();
-
-  const relativeTime = bookmark.bookmarked_at
-    ? formatDistanceToNow(new Date(bookmark.bookmarked_at * 1000), { addSuffix: true })
-    : null;
-
-  const mediaToShow = bookmark.media_urls?.slice(0, 2) ?? [];
-  const extraMedia = (bookmark.media_urls?.length ?? 0) - 2;
-
-  useEffect(() => {
-    const text = textRef.current;
-    if (!text || expanded) return;
-
-    const measure = () => setTextCanExpand(text.scrollHeight > text.clientHeight + 1);
-    measure();
-
-    if (typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(measure);
-    observer.observe(text);
-    return () => observer.disconnect();
-  }, [bookmark.full_text, expanded]);
+/**
+ * 2a / 3a post card. Deliberately chrome-free: the whole card opens the reader,
+ * which is where every action on a post lives.
+ */
+export function BookmarkCard({ bookmark }: { bookmark: Bookmark }) {
+  const { folderId, tags, setFolder, toggleTag, openPost } = useLibraryFilters();
+  const age = bookmark.bookmarked_at ? compactAge(bookmark.bookmarked_at) : null;
+  const primaryFolder = bookmark.folders[0] ?? null;
 
   return (
     <article
+      role="button"
+      tabIndex={0}
+      aria-label={`Open post by ${bookmark.author_name}`}
+      onClick={() => openPost(bookmark.id)}
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        openPost(bookmark.id);
+      }}
       className={cn(
-        'group relative flex h-full flex-col bg-card border rounded-lg p-4 cursor-pointer transition-all duration-150',
-        'border-[var(--card-border)] hover:border-[var(--card-border-hover)] hover:shadow-lg',
+        'flex cursor-pointer flex-col gap-[13px] rounded-[14px] border border-card-border bg-card p-[18px] md:gap-3.5 md:rounded-[12px] md:p-5',
+        'transition-colors duration-150 hover:border-card-border-hover hover:bg-card-hover',
+        'focus-visible:border-card-border-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
       )}
-      onClick={() => setExpanded((v) => !v)}
     >
-      {/* Header row */}
-      <div className="flex items-start gap-3 mb-3">
-        <Avatar
+      <div className="flex items-center gap-2.5">
+        <PostAvatar
           src={bookmark.author_avatar}
           name={bookmark.author_name}
-          handle={bookmark.author_handle}
+          className="size-8 text-[11px] md:size-7"
         />
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-sm font-semibold text-text-primary truncate">
-              {bookmark.author_name}
-            </span>
-            <span className="text-xs font-mono text-text-secondary truncate">
-              @{bookmark.author_handle}
-            </span>
-          </div>
-          {relativeTime && (
-            <span className="text-[11px] font-mono text-muted-foreground">{relativeTime}</span>
-          )}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate text-[14px] font-medium text-text-primary md:text-[13px]">
+            {bookmark.author_name}
+          </span>
+          <span className="truncate text-[12px] text-muted-foreground md:text-[11px]">
+            @{bookmark.author_handle}
+          </span>
         </div>
+        {age && <span className="shrink-0 text-[12px] text-text-faint md:text-[11px]">{age}</span>}
       </div>
 
-      {/* Tweet text */}
-      <div className="mb-3">
-        <p
-          ref={textRef}
-          className={cn(
-            'text-sm text-text-primary whitespace-pre-wrap leading-relaxed',
-            !expanded && 'line-clamp-3',
-          )}
-        >
-          {bookmark.full_text}
-        </p>
-        {textCanExpand && (
-          <button
-            type="button"
-            aria-expanded={expanded}
-            className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-[#1d9bf0] hover:text-[#55acee]"
-            onClick={(event) => {
-              event.stopPropagation();
-              setExpanded((value) => !value);
-            }}
-          >
-            {expanded ? (
-              <>
-                Collapse post <ChevronUpIcon className="h-3 w-3" />
-              </>
-            ) : (
-              <>
-                Expand post <ChevronDownIcon className="h-3 w-3" />
-              </>
-            )}
-          </button>
-        )}
-      </div>
+      <p className="line-clamp-[14] font-serif text-[19px] leading-[1.5] whitespace-pre-wrap text-[#d6d6da] md:text-[18px]">
+        {bookmark.full_text}
+      </p>
 
-      {/* Quoted tweet */}
       {bookmark.quoted_tweet && (
-        <div className="mb-3 border border-[var(--card-border)] rounded-md p-3 bg-[#111111]">
-          <div className="flex items-center gap-1.5 mb-1">
-            <span className="text-xs font-semibold text-text-primary">
+        <div className="rounded-lg border border-card-border bg-[#101012] p-3">
+          <div className="mb-1 flex items-baseline gap-1.5">
+            <span className="truncate text-[12px] font-medium text-text-secondary">
               {bookmark.quoted_tweet.author_name}
             </span>
-            <span className="text-[11px] font-mono text-text-secondary">
+            <span className="truncate font-mono text-[11px] text-text-faint">
               @{bookmark.quoted_tweet.author_handle}
             </span>
           </div>
-          <p
-            className={cn(
-              'text-xs text-text-secondary leading-relaxed',
-              !expanded && 'line-clamp-2',
-            )}
-          >
+          <p className="line-clamp-3 font-serif text-[15px] leading-[1.5] text-[#9a9aa0]">
             {bookmark.quoted_tweet.full_text}
           </p>
         </div>
       )}
 
-      {/* Media */}
-      {mediaToShow.length > 0 && (
-        <div
-          className={cn(
-            '-mx-4 mb-3 grid w-[calc(100%+2rem)] overflow-hidden border-y border-[var(--card-border)] bg-muted',
-            mediaToShow.length === 1 ? 'grid-cols-1' : 'grid-cols-2 gap-px',
-          )}
-        >
-          {mediaToShow.map((url, i) => (
-            <div
-              key={i}
-              className={cn(
-                'relative w-full overflow-hidden bg-muted',
-                mediaToShow.length === 1 ? 'aspect-video' : 'aspect-square',
-              )}
-            >
-              <Image
-                src={url}
-                alt="Post media"
-                fill
-                className="object-cover"
-                unoptimized
-                sizes="(min-width: 1280px) 50vw, 100vw"
-              />
-              {extraMedia > 0 && i === mediaToShow.length - 1 && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/55">
-                  <span className="text-sm font-semibold text-white">+{extraMedia}</span>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
+      <PostMedia urls={bookmark.media_urls ?? []} className="h-[180px] md:h-[170px]" />
 
-      {/* Folder + tag chips */}
       {(bookmark.folders.length > 0 || bookmark.tags.length > 0) && (
-        <div className="flex flex-wrap gap-1 mb-2" onClick={(e) => e.stopPropagation()}>
-          {bookmark.folders.map((f) => (
-            <Badge
-              key={f.id}
-              variant="secondary"
-              className="text-[10px] px-2 py-0 h-4 font-normal"
-              style={{ borderLeft: `3px solid ${f.color ?? '#71767b'}` }}
+        <div
+          className="flex flex-wrap items-center gap-1.5"
+          onClick={(event) => event.stopPropagation()}
+        >
+          {primaryFolder && (
+            <button
+              type="button"
+              onClick={() =>
+                setFolder(folderId === primaryFolder.id ? null : primaryFolder.id)
+              }
+              className="flex items-center gap-1.5 text-[12px] text-text-secondary transition-colors hover:text-text-primary md:text-[11px]"
             >
-              {f.name}
-            </Badge>
-          ))}
-          {bookmark.tags.map((t) => (
-            <Badge
-              key={t.id}
-              variant="outline"
-              className="text-[10px] px-2 py-0 h-4 font-mono border-border text-text-secondary"
+              <span
+                className="size-1 rounded-full"
+                style={{ backgroundColor: primaryFolder.color ?? '#5c5c62' }}
+              />
+              {primaryFolder.name}
+            </button>
+          )}
+          {bookmark.tags.map((tag) => (
+            <button
+              key={tag.id}
+              type="button"
+              onClick={() => toggleTag(tag.name)}
+              className={cn(
+                'rounded-[5px] px-[7px] py-[3px] font-mono text-[11px] transition-colors md:text-[10px]',
+                tags.includes(tag.name)
+                  ? 'bg-chip-active text-chip-active-foreground'
+                  : 'bg-chip text-text-tertiary hover:bg-chip-active hover:text-chip-active-foreground',
+              )}
             >
-              #{t.name}
-            </Badge>
+              {tag.name}
+            </button>
           ))}
         </div>
       )}
-
-      {/* Persistent action row */}
-      <div
-        className="mt-auto flex items-center gap-1 border-t border-[var(--card-border)] pt-2"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Open on X — uses render prop to make TooltipTrigger render as <a> */}
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <a
-                href={bookmark.tweet_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="p-1.5 rounded-md text-[#71767b] hover:text-[#1d9bf0] hover:bg-secondary transition-colors"
-              />
-            }
-          >
-            <ExternalLinkIcon className="w-3.5 h-3.5" />
-          </TooltipTrigger>
-          <TooltipContent side="bottom" className="text-xs">
-            Open on X
-          </TooltipContent>
-        </Tooltip>
-
-        {/* Folder popover — self-contained, renders its own trigger */}
-        <FolderDropdown bookmarkId={bookmark.id} bookmarkFolders={bookmark.folders} />
-
-        {/* Tag popover — self-contained, renders its own trigger */}
-        <TagInput bookmarkId={bookmark.id} bookmarkTags={bookmark.tags} />
-
-        {/* Remove */}
-        <button
-          title="Remove bookmark"
-          className="p-1.5 rounded-md text-[#71767b] hover:text-destructive hover:bg-secondary transition-colors"
-          onClick={() => setDeleteOpen(true)}
-        >
-          <Trash2Icon className="w-3.5 h-3.5" />
-        </button>
-      </div>
-
-      <DeleteBookmarkDialog
-        open={deleteOpen}
-        onOpenChange={setDeleteOpen}
-        onConfirm={() => {
-          deleteBookmark.mutate(bookmark.id);
-          setDeleteOpen(false);
-        }}
-        isPending={deleteBookmark.isPending}
-      />
     </article>
   );
 }

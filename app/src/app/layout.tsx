@@ -1,24 +1,30 @@
 import type { Metadata } from 'next';
-import { IBM_Plex_Mono, IBM_Plex_Sans } from 'next/font/google';
+import { DM_Sans, JetBrains_Mono, Newsreader } from 'next/font/google';
 import { Providers } from '@/components/providers';
 import './globals.css';
 
-const ibmPlexSans = IBM_Plex_Sans({
+const dmSans = DM_Sans({
   subsets: ['latin'],
-  weight: ['400', '500', '600'],
   variable: '--font-sans',
   display: 'swap',
 });
 
-const ibmPlexMono = IBM_Plex_Mono({
+// Post bodies and section labels — italic is used for the facet-row labels.
+const newsreader = Newsreader({
   subsets: ['latin'],
-  weight: ['400', '500'],
+  style: ['normal', 'italic'],
+  variable: '--font-serif',
+  display: 'swap',
+});
+
+const jetBrainsMono = JetBrains_Mono({
+  subsets: ['latin'],
   variable: '--font-mono',
   display: 'swap',
 });
 
 export const metadata: Metadata = {
-  title: 'X Bookmarks',
+  title: 'Saved · X Bookmarks',
   description: 'Local X bookmark manager',
 };
 
@@ -26,9 +32,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html
       lang="en"
-      className={`${ibmPlexSans.variable} ${ibmPlexMono.variable} h-full antialiased`}
+      className={`${dmSans.variable} ${newsreader.variable} ${jetBrainsMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">
+      <body className="min-h-full flex flex-col font-sans">
         <Providers>{children}</Providers>
       </body>
     </html>

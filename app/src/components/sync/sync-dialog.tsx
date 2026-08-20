@@ -44,7 +44,9 @@ export function SyncDialog({ open, onOpenChange }: SyncDialogProps) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="bg-card border-border max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-text-primary">Sync your X Bookmarks</DialogTitle>
+          <DialogTitle className="font-serif text-[19px] font-medium text-text-primary">
+            Sync your X Bookmarks
+          </DialogTitle>
           <DialogDescription className="text-text-secondary">
             Sign in through X, then pull new bookmarks or rescan your complete library.
           </DialogDescription>
@@ -76,7 +78,7 @@ export function SyncDialog({ open, onOpenChange }: SyncDialogProps) {
               href="/api/x/oauth/start"
               className={cn(
                 buttonVariants(),
-                'w-full bg-[#1d9bf0] text-white hover:bg-[#1a8cd8]',
+                'w-full bg-primary text-primary-foreground hover:bg-primary/90',
               )}
             >
               Connect X <ExternalLink className="h-3.5 w-3.5" />
@@ -146,7 +148,7 @@ export function SyncDialog({ open, onOpenChange }: SyncDialogProps) {
             )}
 
             <Button
-              className="w-full bg-[#1d9bf0] text-white hover:bg-[#1a8cd8]"
+              className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
               disabled={syncing}
               onClick={() => {
                 setConfirmFullSync(false);
@@ -169,7 +171,7 @@ export function SyncDialog({ open, onOpenChange }: SyncDialogProps) {
                   <div className="flex gap-2">
                     <Button
                       size="sm"
-                      className="bg-[#1d9bf0] text-white hover:bg-[#1a8cd8]"
+                      className="bg-primary text-primary-foreground hover:bg-primary/90"
                       disabled={syncing}
                       onClick={() => {
                         setConfirmFullSync(false);

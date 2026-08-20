@@ -55,6 +55,7 @@ export function useAddToFolder() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bookmarks'] });
+      queryClient.invalidateQueries({ queryKey: ['bookmark'] });
       queryClient.invalidateQueries({ queryKey: ['folders'] });
     },
   });
@@ -69,6 +70,7 @@ export function useRemoveFromFolder() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bookmarks'] });
+      queryClient.invalidateQueries({ queryKey: ['bookmark'] });
       queryClient.invalidateQueries({ queryKey: ['folders'] });
     },
   });

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, type ReactNode } from 'react';
 import { TagIcon, XIcon } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useTags } from '@/hooks/use-tags';
@@ -10,9 +10,17 @@ import type { Tag } from '@/types';
 interface TagInputProps {
   bookmarkId: number;
   bookmarkTags: Tag[];
+  /** Lets the reader's action bar render this as a labelled pill. */
+  triggerClassName?: string;
+  triggerContent?: ReactNode;
 }
 
-export function TagInput({ bookmarkId, bookmarkTags }: TagInputProps) {
+export function TagInput({
+  bookmarkId,
+  bookmarkTags,
+  triggerClassName,
+  triggerContent,
+}: TagInputProps) {
   const [inputValue, setInputValue] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -51,11 +59,14 @@ export function TagInput({ bookmarkId, bookmarkTags }: TagInputProps) {
     <Popover>
       {/* base-ui Trigger renders as a <button> — style it directly */}
       <PopoverTrigger
-        className="p-1.5 rounded-md text-[#71767b] hover:text-[#1d9bf0] hover:bg-secondary transition-colors"
+        className={
+          triggerClassName ??
+          'p-1.5 rounded-md text-muted-foreground hover:text-text-primary hover:bg-secondary transition-colors'
+        }
         title="Tags"
         onClick={(e) => e.stopPropagation()}
       >
-        <TagIcon className="w-3.5 h-3.5" />
+        {triggerContent ?? <TagIcon className="w-3.5 h-3.5" />}
       </PopoverTrigger>
 
       <PopoverContent
@@ -71,7 +82,7 @@ export function TagInput({ bookmarkId, bookmarkTags }: TagInputProps) {
           {bookmarkTags.map((tag) => (
             <span
               key={tag.id}
-              className="flex items-center gap-1 text-[11px] bg-secondary border border-border text-text-primary rounded-full px-2 py-0.5"
+              className="flex items-center gap-1 font-mono text-[11px] bg-chip-active border border-chip-active-border text-chip-active-foreground rounded-md px-2 py-0.5"
             >
               {tag.name}
               <button
@@ -91,7 +102,7 @@ export function TagInput({ bookmarkId, bookmarkTags }: TagInputProps) {
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Add tag…"
-            className="w-full text-xs bg-secondary border border-border rounded-md px-2 py-1.5 text-text-primary placeholder:text-muted-foreground outline-none focus:border-[#1d9bf0]"
+            className="w-full font-mono text-xs bg-input border border-input-border rounded-md px-2 py-1.5 text-text-primary placeholder:text-muted-foreground outline-none focus:border-[#3a3a41]"
           />
           {/* Autocomplete suggestions */}
           {suggestions.length > 0 && (

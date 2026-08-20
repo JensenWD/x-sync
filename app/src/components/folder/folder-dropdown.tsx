@@ -1,25 +1,29 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { FolderIcon, PlusIcon } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { FOLDER_COLORS } from '@/components/folder/create-folder-popover';
 import { useFolders, useCreateFolder, useAddToFolder, useRemoveFromFolder } from '@/hooks/use-folders';
 import type { Folder } from '@/types';
-
-const FOLDER_COLORS = [
-  '#1d9bf0', '#f91880', '#00ba7c', '#ffd400',
-  '#ff7a00', '#7856ff', '#fa3939', '#71767b',
-];
 
 interface FolderDropdownProps {
   bookmarkId: number;
   bookmarkFolders: Folder[];
+  /** Lets the reader's action bar render this as a labelled pill. */
+  triggerClassName?: string;
+  triggerContent?: ReactNode;
 }
 
-export function FolderDropdown({ bookmarkId, bookmarkFolders }: FolderDropdownProps) {
+export function FolderDropdown({
+  bookmarkId,
+  bookmarkFolders,
+  triggerClassName,
+  triggerContent,
+}: FolderDropdownProps) {
   const [search, setSearch] = useState('');
   const [addingNew, setAddingNew] = useState(false);
   const [newName, setNewName] = useState('');
@@ -55,11 +59,14 @@ export function FolderDropdown({ bookmarkId, bookmarkFolders }: FolderDropdownPr
     <Popover>
       {/* base-ui Trigger renders as a <button> — style it directly */}
       <PopoverTrigger
-        className="p-1.5 rounded-md text-[#71767b] hover:text-[#1d9bf0] hover:bg-secondary transition-colors"
-        title="Folders"
+        className={
+          triggerClassName ??
+          'p-1.5 rounded-md text-muted-foreground hover:text-text-primary hover:bg-secondary transition-colors'
+        }
+        title="Collections"
         onClick={(e) => e.stopPropagation()}
       >
-        <FolderIcon className="w-3.5 h-3.5" />
+        {triggerContent ?? <FolderIcon className="w-3.5 h-3.5" />}
       </PopoverTrigger>
 
       <PopoverContent
@@ -70,8 +77,8 @@ export function FolderDropdown({ bookmarkId, bookmarkFolders }: FolderDropdownPr
         <Input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search folders…"
-          className="h-7 text-xs bg-secondary border-border mb-1"
+          placeholder="Search collections…"
+          className="h-7 text-xs bg-input border-input-border mb-1"
         />
         <div className="max-h-40 overflow-y-auto space-y-0.5">
           {filtered.map((folder) => (
@@ -92,7 +99,7 @@ export function FolderDropdown({ bookmarkId, bookmarkFolders }: FolderDropdownPr
             </label>
           ))}
           {filtered.length === 0 && (
-            <p className="px-2 py-1.5 text-xs text-muted-foreground italic">No folders found</p>
+            <p className="px-2 py-1.5 text-xs text-muted-foreground italic">No collections found</p>
           )}
         </div>
         <div className="border-t border-border mt-1 pt-1">
@@ -102,7 +109,7 @@ export function FolderDropdown({ bookmarkId, bookmarkFolders }: FolderDropdownPr
               className="flex items-center gap-1.5 px-2 py-1.5 w-full text-xs text-[#71767b] hover:text-text-primary rounded-md hover:bg-secondary"
             >
               <PlusIcon className="w-3 h-3" />
-              New folder…
+              New collection…
             </button>
           ) : (
             <div className="px-1 space-y-1.5">
@@ -114,8 +121,8 @@ export function FolderDropdown({ bookmarkId, bookmarkFolders }: FolderDropdownPr
                   if (e.key === 'Enter') handleCreate();
                   if (e.key === 'Escape') setAddingNew(false);
                 }}
-                placeholder="Folder name"
-                className="h-7 text-xs bg-secondary border-border"
+                placeholder="Collection name"
+                className="h-7 text-xs bg-input border-input-border"
               />
               <div className="flex gap-1 flex-wrap">
                 {FOLDER_COLORS.map((c) => (
@@ -134,7 +141,7 @@ export function FolderDropdown({ bookmarkId, bookmarkFolders }: FolderDropdownPr
               <div className="flex gap-1">
                 <Button
                   size="sm"
-                  className="h-6 text-[11px] flex-1 bg-[#1d9bf0] hover:bg-[#1a8cd8] text-white"
+                  className="h-6 text-[11px] flex-1 bg-primary text-primary-foreground hover:bg-primary/90"
                   onClick={handleCreate}
                   disabled={createFolder.isPending}
                 >

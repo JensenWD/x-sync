@@ -39,21 +39,35 @@ function DialogOverlay({
   )
 }
 
+// Default entrance/exit. Kept separate from the layout classes so a caller can
+// replace it outright — tailwind-merge cannot reconcile two competing
+// `zoom-in-*` / `slide-in-*` utilities, so a bottom sheet has to opt out rather
+// than override.
+const DIALOG_ANIMATION =
+  "data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95"
+
 function DialogContent({
   className,
+  overlayClassName,
+  animation = DIALOG_ANIMATION,
   children,
   showCloseButton = true,
   ...props
 }: DialogPrimitive.Popup.Props & {
   showCloseButton?: boolean
+  /** Extra classes for this dialog's backdrop only. */
+  overlayClassName?: string
+  /** Replaces the default enter/exit animation utilities. */
+  animation?: string
 }) {
   return (
     <DialogPortal>
-      <DialogOverlay />
+      <DialogOverlay className={overlayClassName} />
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm",
+          animation,
           className
         )}
         {...props}

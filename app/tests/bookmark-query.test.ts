@@ -60,13 +60,15 @@ function createDatabase() {
     );
     CREATE TABLE taxonomy_events (
       id INTEGER PRIMARY KEY,
-      applied_at INTEGER
+      applied_at INTEGER,
+      reverted_at INTEGER
     );
     CREATE TABLE taxonomy_assignments (
       bookmark_id INTEGER NOT NULL,
       kind TEXT NOT NULL,
       target_id INTEGER NOT NULL,
       source TEXT NOT NULL,
+      updated_at INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (bookmark_id, kind, target_id)
     );
     CREATE TABLE bookmark_enrichments (

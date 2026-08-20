@@ -34,7 +34,13 @@ export function libraryRevision(sqlite: import('better-sqlite3').Database) {
       `SELECT
          COALESCE((SELECT last_successful_run_id FROM sync_state WHERE id = 1), 0) AS sync_run,
          COALESCE((SELECT MAX(updated_at) FROM bookmarks), 0) AS bookmark_update,
-         COALESCE((SELECT MAX(applied_at) FROM taxonomy_events), 0) AS taxonomy_update,
+         MAX(
+           COALESCE((SELECT MAX(applied_at) FROM taxonomy_events), 0),
+           COALESCE((SELECT MAX(reverted_at) FROM taxonomy_events), 0),
+           COALESCE((SELECT MAX(updated_at) FROM taxonomy_assignments), 0),
+           COALESCE((SELECT MAX(updated_at) FROM folders), 0),
+           COALESCE((SELECT MAX(created_at) FROM tags), 0)
+         ) AS taxonomy_update,
          COALESCE((SELECT MAX(updated_at) FROM bookmark_enrichments), 0) AS enrichment_update`,
     )
     .get() as {

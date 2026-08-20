@@ -50,6 +50,14 @@ export interface SyncRunSummary {
 
 export interface SyncResult extends SyncRunSummary {
   total_bookmarks: number;
+  auto_tag?: {
+    status: 'success' | 'skipped' | 'failed';
+    queued: number;
+    tagged: number;
+    assignments: number;
+    model: string | null;
+    error: string | null;
+  };
 }
 
 export interface BrowserPageRecordResult {

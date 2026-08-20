@@ -72,6 +72,14 @@ export interface SyncRun {
   stop_reason: string | null;
   error_code: string | null;
   error_message: string | null;
+  auto_tag?: {
+    status: 'success' | 'skipped' | 'failed';
+    queued: number;
+    tagged: number;
+    assignments: number;
+    model: string | null;
+    error: string | null;
+  };
 }
 
 export interface XConnectionStatus {

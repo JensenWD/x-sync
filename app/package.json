@@ -12,7 +12,8 @@
     "db:migrate": "tsx scripts/db-migrate.ts",
     "db:setup": "npx tsx scripts/db-setup.ts",
     "db:init": "npx tsx scripts/db-setup.ts --create",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "autotag:run": "tsx scripts/auto-tag-run.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",

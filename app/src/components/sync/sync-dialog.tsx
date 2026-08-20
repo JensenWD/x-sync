@@ -136,6 +136,17 @@ export function SyncDialog({ open, onOpenChange }: SyncDialogProps) {
                   {sync.data.bookmarks_existing} existing bookmarks.
                   {sync.data.remote_removed > 0 &&
                     ` Archived ${sync.data.remote_removed} no longer present on X.`}
+                  {sync.data.auto_tag?.status === 'success' &&
+                    ` Automatically organized ${sync.data.auto_tag.tagged} bookmark${sync.data.auto_tag.tagged === 1 ? '' : 's'} with ${sync.data.auto_tag.assignments} audited assignment${sync.data.auto_tag.assignments === 1 ? '' : 's'}.`}
+                </AlertDescription>
+              </Alert>
+            )}
+            {sync.data?.auto_tag?.status === 'failed' && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  Bookmark sync succeeded, but automatic organization failed: {sync.data.auto_tag.error}
+                  {' '}The unorganized bookmarks will be retried on the next sync.
                 </AlertDescription>
               </Alert>
             )}
@@ -156,7 +167,11 @@ export function SyncDialog({ open, onOpenChange }: SyncDialogProps) {
               }}
             >
               {syncing && <Loader2 className="h-4 w-4 animate-spin" />}
-              {syncing ? 'Syncing bookmarks…' : 'Sync new bookmarks'}
+              {syncing
+                ? activeRun
+                  ? 'Syncing bookmarks…'
+                  : 'Organizing bookmarks…'
+                : 'Sync new bookmarks'}
             </Button>
 
             {confirmFullSync ? (
@@ -203,7 +218,8 @@ export function SyncDialog({ open, onOpenChange }: SyncDialogProps) {
             )}
             <p className="text-xs text-muted-foreground">
               New-only sync stops after two pages of known bookmarks. Entire-library sync follows
-              every X continuation token using the reliable 50-item page size.
+              every X continuation token using the reliable 50-item page size. New bookmarks are
+              automatically organized from local content after either sync completes.
             </p>
           </div>
         )}

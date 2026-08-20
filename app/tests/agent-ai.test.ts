@@ -9,6 +9,7 @@ import {
   rollbackTaxonomyEvents,
 } from '../src/lib/agent-taxonomy';
 import { semanticSearch, storeEnrichments } from '../src/lib/agent-enrichment';
+import { autoTagMissingBookmarks } from '../src/lib/auto-tag';
 
 function createDatabase() {
   const sqlite = new Database(':memory:');
@@ -188,6 +189,123 @@ test('agent taxonomy changes require review, protect manual work, and roll back'
   assert.ok('can_apply' in blocked);
   assert.equal(blocked.can_apply, false);
   assert.equal(blocked.plan[0].blocked, 'manual_assignment_protected');
+  sqlite.close();
+});
+
+test('post-sync auto-tagging classifies missing-folder bookmarks and applies audited assignments', async () => {
+  const sqlite = createDatabase();
+  sqlite.exec(`
+    INSERT INTO folders (id, name, description) VALUES
+      (1, 'AI & Software', 'AI and software.'),
+      (2, 'Video', 'Typed video override.'),
+      (3, 'Undetermined', 'Insufficient context.');
+    INSERT INTO bookmark_folders (bookmark_id, folder_id) VALUES (2, 1);
+    INSERT INTO bookmark_tags (bookmark_id, tag_id) VALUES (2, 2);
+    INSERT INTO bookmarks
+      (id, tweet_id, full_text, author_name, author_handle, tweet_url, media_urls, media_metadata)
+    VALUES
+      (3, '300', 'Watch this', 'Carol', 'carol', 'https://x.com/carol/status/300',
+       '["https://video.twimg.com/ext_tw_video/300/pu/vid/test.mp4"]',
+       '[{"type":"video","url":"https://video.twimg.com/ext_tw_video/300/pu/vid/test.mp4"}]');
+  `);
+  let calls = 0;
+  const result = await autoTagMissingBookmarks(sqlite, async (prompt) => {
+    calls += 1;
+    assert.match(prompt, /untrusted external content/);
+    assert.match(prompt, /Local AI agents and memory/);
+    assert.doesNotMatch(prompt, /"bookmark_id":3/);
+    return {
+      model: 'test/classifier',
+      text: JSON.stringify({
+        classifications: [
+          {
+            bookmark_id: 1,
+            folder: 'AI & Software',
+            tags: ['ai'],
+            confidence: 0.97,
+            rationale: 'The post explicitly discusses local AI agents.',
+          },
+        ],
+      }),
+    };
+  });
+
+  assert.equal(calls, 1);
+  assert.deepEqual(result, {
+    status: 'success',
+    queued: 2,
+    tagged: 2,
+    assignments: 3,
+    model: 'deterministic/video-v1, test/classifier',
+    error: null,
+  });
+  const folders = sqlite
+    .prepare(
+      `SELECT b.id, f.name
+       FROM bookmarks b
+       JOIN bookmark_folders bf ON bf.bookmark_id = b.id
+       JOIN folders f ON f.id = bf.folder_id
+       WHERE b.id IN (1, 3)
+       ORDER BY b.id`,
+    )
+    .all();
+  assert.deepEqual(folders, [
+    { id: 1, name: 'AI & Software' },
+    { id: 3, name: 'Video' },
+  ]);
+  assert.equal(
+    (sqlite.prepare("SELECT COUNT(*) AS count FROM bookmark_tags WHERE bookmark_id = 1").get() as { count: number }).count,
+    2,
+  );
+  assert.equal(
+    (sqlite.prepare("SELECT COUNT(*) AS count FROM taxonomy_proposals WHERE status = 'applied'").get() as { count: number }).count,
+    3,
+  );
+  assert.equal(
+    (sqlite.prepare('SELECT COUNT(*) AS count FROM taxonomy_events').get() as { count: number }).count,
+    3,
+  );
+
+  const replay = await autoTagMissingBookmarks(sqlite, async () => {
+    throw new Error('Model must not run when no bookmarks are missing folders');
+  });
+  assert.equal(replay.status, 'skipped');
+  assert.equal(replay.queued, 0);
+  sqlite.close();
+});
+
+test('post-sync auto-tagging retries malformed model output before applying', async () => {
+  const sqlite = createDatabase();
+  sqlite.exec(`
+    INSERT INTO folders (id, name, description) VALUES
+      (1, 'AI & Software', 'AI and software.'),
+      (2, 'Video', 'Typed video override.'),
+      (3, 'Undetermined', 'Insufficient context.');
+    INSERT INTO bookmark_folders (bookmark_id, folder_id) VALUES (2, 1);
+  `);
+  let calls = 0;
+  const result = await autoTagMissingBookmarks(sqlite, async (prompt) => {
+    calls += 1;
+    if (calls === 1) return { model: 'test/classifier', text: '{"classifications":[]}' };
+    assert.match(prompt, /previous response failed validation/);
+    return {
+      model: 'test/classifier',
+      text: JSON.stringify({
+        classifications: [
+          {
+            bookmark_id: 1,
+            folder: 'AI & Software',
+            tags: [],
+            confidence: 0.9,
+            rationale: 'The visible text directly discusses AI agents.',
+          },
+        ],
+      }),
+    };
+  });
+  assert.equal(calls, 2);
+  assert.equal(result.status, 'success');
+  assert.equal(result.tagged, 1);
   sqlite.close();
 });
 

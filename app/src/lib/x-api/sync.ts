@@ -16,6 +16,7 @@ import {
 import { fetchWithDeadline } from './fetch';
 import { createVerifiedDatabaseBackup } from '@/lib/db/backup';
 import { rawDb } from '@/lib/db/client';
+import { autoTagMissingBookmarks, failedAutoTagResult } from '@/lib/auto-tag';
 
 class XApiRequestError extends Error {
   constructor(
@@ -93,7 +94,14 @@ export async function syncOfficialBookmarks(
       }
 
       const result = ingestParsedPage(run.id, cursor, page, reconciliationConfirmation);
-      if (result.status === 'success') return result.run;
+      if (result.status === 'success') {
+        try {
+          const autoTag = await autoTagMissingBookmarks(rawDb);
+          return { ...result.run, auto_tag: autoTag };
+        } catch (error) {
+          return { ...result.run, auto_tag: failedAutoTagResult(error) };
+        }
+      }
       cursor = result.cursor;
     }
   } catch (error) {

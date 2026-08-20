@@ -52,6 +52,8 @@ Tweet, quote, media, link, and enrichment text is explicitly marked as untrusted
 
 Enrichment and embedding writes default to `dry_run=true`. Taxonomy suggestions are stored without changing a bookmark. Applying or rolling back also defaults to `dry_run=true`, only approved proposals can be applied, current bookmark content must still match its hash, and manual tag/folder assignments cannot be removed by an agent. Every applied change records before/after state for rollback.
 
+Successful official X syncs automatically organize active bookmarks that do not yet have a folder. The post-sync classifier reads only local bookmark content and the controlled taxonomy, applies the deterministic `Video` override, uses `Undetermined` rather than guessing, and can select one existing folder plus up to three existing tags. It cannot create taxonomy names, never removes manual work, and sends every automatic addition through proposal, approval, dry-run, apply, content-hash validation, and audit-event recording. A classifier failure does not roll back or misreport the paid X sync; missing-folder bookmarks are retried on the next sync.
+
 The app intentionally has no application authentication because it is a single-user Tailnet service. That is a deployment assumption, not permission for agents to bypass proposal, concurrency, or rollback safeguards.
 
 ## Sync behavior

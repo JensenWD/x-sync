@@ -1,7 +1,11 @@
 import { rawDb } from '@/lib/db/client';
-import { db } from '@/lib/db/client';
-import { folders } from '@/lib/db/schema';
 import { NextRequest } from 'next/server';
+import {
+  boundedName,
+  jsonObject,
+  optionalHexColor,
+  validationResponse,
+} from '@/lib/http/input-validation';
 
 export async function GET() {
   const rows = rawDb
@@ -18,13 +22,22 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const { name, color } = await req.json();
-  if (!name?.trim()) return Response.json({ error: 'name is required' }, { status: 400 });
-
-  const inserted = await db
-    .insert(folders)
-    .values({ name: name.trim(), color: color ?? null })
-    .returning();
-
-  return Response.json(inserted[0], { status: 201 });
+  try {
+    const body = await jsonObject(req);
+    const name = boundedName(body.name, 'name', 80);
+    const color = optionalHexColor(body.color);
+    const duplicate = rawDb.prepare('SELECT 1 FROM folders WHERE lower(name) = lower(?)').get(name);
+    if (duplicate) return Response.json({ error: 'A folder with that name already exists' }, { status: 409 });
+    const inserted = rawDb
+      .prepare(
+        `INSERT INTO folders (name, color, created_at, updated_at)
+         VALUES (?, ?, unixepoch(), unixepoch()) RETURNING *`,
+      )
+      .get(name, color);
+    return Response.json(inserted, { status: 201 });
+  } catch (error) {
+    const response = validationResponse(error);
+    if (response) return response;
+    throw error;
+  }
 }

@@ -1,0 +1,1 @@
+ALTER TABLE `bookmark_enrichments` ADD `agent_run_id` integer REFERENCES agent_runs(id);

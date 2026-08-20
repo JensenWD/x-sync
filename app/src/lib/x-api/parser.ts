@@ -24,10 +24,6 @@ function byStringId(values: JsonObject[]) {
   );
 }
 
-function mediaUrl(media: JsonObject | undefined) {
-  return asString(media?.url) ?? asString(media?.preview_image_url);
-}
-
 function fullText(tweet: JsonObject) {
   return asString(asObject(tweet.note_tweet)?.text) ?? asString(tweet.text) ?? '';
 }
@@ -36,6 +32,7 @@ function quotedTweet(
   tweet: JsonObject,
   tweets: Map<string, JsonObject>,
   users: Map<string, JsonObject>,
+  media: Map<string, JsonObject>,
 ) {
   const reference = objectArray(tweet.referenced_tweets).find(
     (item) => asString(item.type) === 'quoted',
@@ -45,12 +42,30 @@ function quotedTweet(
   if (!quotedId || !quoted) return null;
 
   const author = users.get(asString(quoted.author_id) ?? '');
+  const authorHandle = asString(author?.username) ?? '';
+  const attachmentKeys = Array.isArray(asObject(quoted.attachments)?.media_keys)
+    ? (asObject(quoted.attachments)?.media_keys as unknown[]).map(asString).filter(Boolean) as string[]
+    : [];
+  const mediaItems = attachmentKeys
+    .map((key) => media.get(key))
+    .filter(Boolean)
+    .map((item) => ({
+      media_key: asString(item?.media_key),
+      type: asString(item?.type),
+      url: asString(item?.url),
+      preview_image_url: asString(item?.preview_image_url),
+    }));
   return {
     tweet_id: quotedId,
     full_text: fullText(quoted),
     author_name: asString(author?.name) ?? '',
-    author_handle: asString(author?.username) ?? '',
+    author_handle: authorHandle,
     author_avatar: asString(author?.profile_image_url),
+    tweet_url: authorHandle
+      ? `https://x.com/${authorHandle}/status/${quotedId}`
+      : `https://x.com/i/web/status/${quotedId}`,
+    created_at: asString(quoted.created_at),
+    media: mediaItems,
   };
 }
 
@@ -91,10 +106,19 @@ export function parseOfficialBookmarkPage(payload: unknown): ParsedTimelinePage 
           .map(asString)
           .filter(Boolean) as string[]
       : [];
-    const mediaUrls = [...new Set(attachmentKeys.map((key) => mediaUrl(media.get(key))).filter(Boolean))] as string[];
+    const mediaItems = attachmentKeys
+      .map((key) => media.get(key))
+      .filter(Boolean)
+      .map((item) => ({
+        media_key: asString(item?.media_key),
+        type: asString(item?.type),
+        url: asString(item?.url),
+        preview_image_url: asString(item?.preview_image_url),
+      }));
+    const mediaUrls = [...new Set(mediaItems.map((item) => item.url ?? item.preview_image_url).filter(Boolean))] as string[];
     const createdAt = asString(tweet.created_at);
     const createdAtMs = createdAt ? Date.parse(createdAt) : Number.NaN;
-    const quote = quotedTweet(tweet, includedTweets, users);
+    const quote = quotedTweet(tweet, includedTweets, users, media);
 
     bookmarks.push({
       tweetId,
@@ -106,6 +130,7 @@ export function parseOfficialBookmarkPage(payload: unknown): ParsedTimelinePage 
         ? `https://x.com/${authorHandle}/status/${tweetId}`
         : `https://x.com/i/web/status/${tweetId}`,
       mediaUrls: mediaUrls.length > 0 ? JSON.stringify(mediaUrls) : null,
+      mediaMetadata: mediaItems.length > 0 ? JSON.stringify(mediaItems) : null,
       quotedTweet: quote ? JSON.stringify(quote) : null,
       tweetCreatedAt: Number.isFinite(createdAtMs) ? Math.floor(createdAtMs / 1000) : null,
     });

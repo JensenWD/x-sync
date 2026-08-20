@@ -9,7 +9,8 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useOfficialSync, useSyncStatus, useXConnection } from '@/hooks/use-sync';
 import { useSearchParams } from 'next/navigation';
@@ -29,10 +30,6 @@ export function SyncDialog({ open, onOpenChange }: SyncDialogProps) {
   const syncing = sync.isPending || Boolean(syncStatus.data?.in_progress);
   const activeRun = syncStatus.data?.active_run;
   const callbackError = searchParams.get('x_error');
-
-  function connect() {
-    window.location.assign('/api/x/oauth/start');
-  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -66,9 +63,15 @@ export function SyncDialog({ open, onOpenChange }: SyncDialogProps) {
               X will ask for read-only access to bookmarks, Posts, and account identity. The app
               cannot post, delete, or change bookmarks.
             </p>
-            <Button className="w-full bg-[#1d9bf0] text-white hover:bg-[#1a8cd8]" onClick={connect}>
+            <a
+              href="/api/x/oauth/start"
+              className={cn(
+                buttonVariants(),
+                'w-full bg-[#1d9bf0] text-white hover:bg-[#1a8cd8]',
+              )}
+            >
               Connect X <ExternalLink className="h-3.5 w-3.5" />
-            </Button>
+            </a>
           </div>
         ) : (
           <div className="space-y-4 py-1">

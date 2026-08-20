@@ -2,6 +2,7 @@ import {
   sqliteTable,
   text,
   integer,
+  real,
   primaryKey,
   index,
   uniqueIndex,
@@ -28,6 +29,7 @@ export const bookmarks = sqliteTable(
     authorAvatar: text('author_avatar'),
     tweetUrl: text('tweet_url').notNull().default(''),
     mediaUrls: text('media_urls'), // JSON array
+    mediaMetadata: text('media_metadata'), // JSON array with type/key/url metadata
     quotedTweet: text('quoted_tweet'), // JSON object
     bookmarkedAt: integer('bookmarked_at'), // Tweet publication time; X does not expose save time
     syncedAt: integer('synced_at'), // Last time this bookmark was observed on X
@@ -44,12 +46,18 @@ export const bookmarks = sqliteTable(
   ],
 );
 
-export const folders = sqliteTable('folders', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  name: text('name').notNull(),
-  color: text('color'),
-  ...timestamps,
-});
+export const folders = sqliteTable(
+  'folders',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    name: text('name').notNull(),
+    color: text('color'),
+    description: text('description'),
+    aliases: text('aliases'), // JSON array
+    ...timestamps,
+  },
+  (t) => [uniqueIndex('folders_name_ci_unique').on(sql`lower(${t.name})`)],
+);
 
 export const bookmarkFolders = sqliteTable(
   'bookmark_folders',
@@ -67,6 +75,8 @@ export const bookmarkFolders = sqliteTable(
 export const tags = sqliteTable('tags', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   name: text('name').notNull().unique(),
+  description: text('description'),
+  aliases: text('aliases'), // JSON array
   createdAt: integer('created_at', { mode: 'timestamp' })
     .notNull()
     .default(sql`(unixepoch())`),
@@ -100,6 +110,9 @@ export const syncRuns = sqliteTable(
     bookmarksInserted: integer('bookmarks_inserted').notNull().default(0),
     bookmarksExisting: integer('bookmarks_existing').notNull().default(0),
     remoteRemoved: integer('remote_removed').notNull().default(0),
+    baselineRemoteCount: integer('baseline_remote_count').notNull().default(0),
+    skippedTweetCount: integer('skipped_tweet_count').notNull().default(0),
+    reconciliationFingerprint: text('reconciliation_fingerprint'),
     stopReason: text('stop_reason'),
     errorCode: text('error_code'),
     errorMessage: text('error_message'),
@@ -154,6 +167,9 @@ export const syncState = sqliteTable('sync_state', {
   lastSyncedAt: integer('last_synced_at'),
   lastFullSyncedAt: integer('last_full_synced_at'),
   lastError: text('last_error'),
+  reconciliationCandidateFingerprint: text('reconciliation_candidate_fingerprint'),
+  reconciliationCandidateCount: integer('reconciliation_candidate_count'),
+  reconciliationCandidateAt: integer('reconciliation_candidate_at'),
   updatedAt: integer('updated_at').notNull().default(sql`(unixepoch())`),
 });
 
@@ -169,3 +185,131 @@ export const xOAuthCredentials = sqliteTable('x_oauth_credentials', {
   connectedAt: integer('connected_at').notNull().default(sql`(unixepoch())`),
   updatedAt: integer('updated_at').notNull().default(sql`(unixepoch())`),
 });
+
+export const agentRuns = sqliteTable(
+  'agent_runs',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    idempotencyKey: text('idempotency_key').notNull().unique(),
+    kind: text('kind').notNull(),
+    status: text('status').notNull().default('running'),
+    agentId: text('agent_id').notNull(),
+    model: text('model'),
+    promptVersion: text('prompt_version'),
+    taxonomyVersion: text('taxonomy_version'),
+    libraryRevision: text('library_revision'),
+    inputJson: text('input_json'),
+    proposedCount: integer('proposed_count').notNull().default(0),
+    appliedCount: integer('applied_count').notNull().default(0),
+    rejectedCount: integer('rejected_count').notNull().default(0),
+    errorMessage: text('error_message'),
+    startedAt: integer('started_at').notNull().default(sql`(unixepoch())`),
+    heartbeatAt: integer('heartbeat_at').notNull().default(sql`(unixepoch())`),
+    finishedAt: integer('finished_at'),
+    createdAt: integer('created_at').notNull().default(sql`(unixepoch())`),
+    updatedAt: integer('updated_at').notNull().default(sql`(unixepoch())`),
+  },
+  (t) => [index('agent_runs_status_idx').on(t.status, t.updatedAt)],
+);
+
+export const taxonomyProposals = sqliteTable(
+  'taxonomy_proposals',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    runId: integer('run_id')
+      .notNull()
+      .references(() => agentRuns.id, { onDelete: 'cascade' }),
+    idempotencyKey: text('idempotency_key').notNull().unique(),
+    bookmarkId: integer('bookmark_id')
+      .notNull()
+      .references(() => bookmarks.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    operation: text('operation').notNull(),
+    targetId: integer('target_id').notNull(),
+    targetName: text('target_name').notNull(),
+    confidence: real('confidence').notNull(),
+    rationale: text('rationale'),
+    contentHash: text('content_hash').notNull(),
+    status: text('status').notNull().default('proposed'),
+    reviewNote: text('review_note'),
+    reviewedAt: integer('reviewed_at'),
+    appliedAt: integer('applied_at'),
+    createdAt: integer('created_at').notNull().default(sql`(unixepoch())`),
+    updatedAt: integer('updated_at').notNull().default(sql`(unixepoch())`),
+  },
+  (t) => [
+    index('taxonomy_proposals_status_idx').on(t.status, t.createdAt),
+    index('taxonomy_proposals_bookmark_idx').on(t.bookmarkId, t.status),
+  ],
+);
+
+export const taxonomyAssignments = sqliteTable(
+  'taxonomy_assignments',
+  {
+    bookmarkId: integer('bookmark_id')
+      .notNull()
+      .references(() => bookmarks.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    targetId: integer('target_id').notNull(),
+    source: text('source').notNull().default('manual'),
+    agentRunId: integer('agent_run_id').references(() => agentRuns.id, { onDelete: 'set null' }),
+    confidence: real('confidence'),
+    rationale: text('rationale'),
+    contentHash: text('content_hash'),
+    createdAt: integer('created_at').notNull().default(sql`(unixepoch())`),
+    updatedAt: integer('updated_at').notNull().default(sql`(unixepoch())`),
+  },
+  (t) => [
+    primaryKey({ columns: [t.bookmarkId, t.kind, t.targetId] }),
+    index('taxonomy_assignments_source_idx').on(t.source, t.kind),
+  ],
+);
+
+export const taxonomyEvents = sqliteTable(
+  'taxonomy_events',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    proposalId: integer('proposal_id').references(() => taxonomyProposals.id, {
+      onDelete: 'set null',
+    }),
+    agentRunId: integer('agent_run_id').references(() => agentRuns.id, { onDelete: 'set null' }),
+    bookmarkId: integer('bookmark_id')
+      .notNull()
+      .references(() => bookmarks.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    targetId: integer('target_id').notNull(),
+    operation: text('operation').notNull(),
+    beforeJson: text('before_json'),
+    afterJson: text('after_json'),
+    appliedAt: integer('applied_at').notNull().default(sql`(unixepoch())`),
+    revertedAt: integer('reverted_at'),
+  },
+  (t) => [index('taxonomy_events_bookmark_idx').on(t.bookmarkId, t.appliedAt)],
+);
+
+export const bookmarkEnrichments = sqliteTable(
+  'bookmark_enrichments',
+  {
+    bookmarkId: integer('bookmark_id')
+      .primaryKey()
+      .references(() => bookmarks.id, { onDelete: 'cascade' }),
+    agentRunId: integer('agent_run_id').references(() => agentRuns.id, { onDelete: 'set null' }),
+    contentHash: text('content_hash').notNull(),
+    status: text('status').notNull().default('pending'),
+    summary: text('summary'),
+    topicsJson: text('topics_json'),
+    entitiesJson: text('entities_json'),
+    linkText: text('link_text'),
+    mediaText: text('media_text'),
+    embeddingModel: text('embedding_model'),
+    embeddingDimensions: integer('embedding_dimensions'),
+    embeddingJson: text('embedding_json'),
+    model: text('model'),
+    promptVersion: text('prompt_version'),
+    errorMessage: text('error_message'),
+    processedAt: integer('processed_at'),
+    createdAt: integer('created_at').notNull().default(sql`(unixepoch())`),
+    updatedAt: integer('updated_at').notNull().default(sql`(unixepoch())`),
+  },
+  (t) => [index('bookmark_enrichments_status_idx').on(t.status, t.updatedAt)],
+);

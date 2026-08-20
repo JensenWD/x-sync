@@ -7,11 +7,12 @@ import {
   SyncAlreadyRunningError,
   SyncCursorMismatchError,
   SyncRunNotFoundError,
+  SyncReconciliationBlockedError,
   SyncRunStateError,
 } from './store';
 import type { BrowserSyncPageResult, ParsedTimelinePage, SyncMode } from './types';
 
-const MAX_PAGES = 250;
+const MAX_PAGES = 2_000;
 const MAX_EMPTY_PAGES_WITH_CURSOR = 3;
 
 export class BrowserSyncError extends Error {
@@ -136,10 +137,17 @@ export function ingestParsedPage(
   }
 
   if (!pageResult.nextCursor) {
-    return {
-      status: 'success',
-      run: store.completeRun(runId, 'end_of_timeline', now()),
-    };
+    try {
+      return {
+        status: 'success',
+        run: store.completeRun(runId, 'end_of_timeline', now()),
+      };
+    } catch (error) {
+      if (error instanceof SyncReconciliationBlockedError) {
+        throw new BrowserSyncError('x_full_sync_anomaly', error.message, 409);
+      }
+      throw error;
+    }
   }
   if (pageResult.repeatedCursor) {
     failAndThrow(

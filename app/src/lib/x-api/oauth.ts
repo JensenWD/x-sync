@@ -2,6 +2,8 @@ import 'server-only';
 import { createHash, randomBytes } from 'node:crypto';
 import { rawDb } from '@/lib/db/client';
 import { decryptToken, encryptToken } from './token-crypto';
+import { fetchWithDeadline } from './fetch';
+import { assertSameXAccount, type XAccountIdentity } from './account-binding';
 
 const AUTHORIZE_URL = 'https://x.com/i/oauth2/authorize';
 const TOKEN_URL = 'https://api.x.com/2/oauth2/token';
@@ -34,10 +36,7 @@ interface StoredCredentials {
   updated_at: number;
 }
 
-interface AuthenticatedUser {
-  id: string;
-  username: string;
-}
+type AuthenticatedUser = XAccountIdentity;
 
 function now() {
   return Math.floor(Date.now() / 1000);
@@ -98,7 +97,7 @@ function tokenErrorMessage(payload: unknown, status: number) {
 
 async function postToken(params: URLSearchParams): Promise<TokenResponse> {
   const config = getXOAuthConfig();
-  const response = await fetch(TOKEN_URL, {
+  const response = await fetchWithDeadline(TOKEN_URL, {
     method: 'POST',
     headers: {
       Authorization: `Basic ${Buffer.from(`${config.clientId}:${config.clientSecret}`).toString('base64')}`,
@@ -138,7 +137,7 @@ export function exchangeAuthorizationCode(code: string, verifier: string) {
 }
 
 export async function getAuthenticatedUser(accessToken: string): Promise<AuthenticatedUser> {
-  const response = await fetch(ME_URL, {
+  const response = await fetchWithDeadline(ME_URL, {
     headers: { Authorization: `Bearer ${accessToken}` },
     cache: 'no-store',
   });
@@ -199,6 +198,8 @@ function saveCredentials(
 }
 
 export function storeAuthorization(user: AuthenticatedUser, token: TokenResponse) {
+  const existing = readCredentials();
+  assertSameXAccount(existing, user);
   saveCredentials(user, token);
 }
 

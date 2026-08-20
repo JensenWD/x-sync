@@ -33,6 +33,15 @@ async function main() {
     if (foreignKeyIssues.length > 0) {
       throw new Error(`Database has ${foreignKeyIssues.length} foreign-key violations after migration.`);
     }
+    const bookmarkCount = Number(
+      (sqlite.prepare('SELECT COUNT(*) AS count FROM bookmarks').get() as { count: number }).count,
+    );
+    const ftsCount = Number(
+      (sqlite.prepare('SELECT COUNT(*) AS count FROM bookmarks_fts').get() as { count: number }).count,
+    );
+    if (bookmarkCount !== ftsCount) {
+      throw new Error(`FTS verification failed: ${ftsCount} indexed rows for ${bookmarkCount} bookmarks`);
+    }
     console.log(`Migration complete. Verified backup: ${backupPath}`);
   } finally {
     sqlite.close();

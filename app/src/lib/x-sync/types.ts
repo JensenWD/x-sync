@@ -9,6 +9,7 @@ export interface XBookmarkRecord {
   authorAvatar: string | null;
   tweetUrl: string;
   mediaUrls: string | null;
+  mediaMetadata: string | null;
   quotedTweet: string | null;
   tweetCreatedAt: number | null;
 }
@@ -25,7 +26,7 @@ export interface SyncRunSummary {
   id: number;
   requested_mode: SyncMode;
   mode: EffectiveSyncMode;
-  status: 'running' | 'success' | 'failed';
+  status: 'running' | 'success' | 'failed' | 'quarantined';
   started_at: number;
   heartbeat_at: number;
   finished_at: number | null;
@@ -34,6 +35,9 @@ export interface SyncRunSummary {
   bookmarks_inserted: number;
   bookmarks_existing: number;
   remote_removed: number;
+  baseline_remote_count: number;
+  skipped_tweet_count: number;
+  reconciliation_fingerprint: string | null;
   stop_reason: string | null;
   error_code: string | null;
   error_message: string | null;

@@ -20,10 +20,10 @@ test('parses official bookmarks with author, media, quote, and pagination data',
         { id: '10', name: 'Author', username: 'author', profile_image_url: 'avatar.jpg' },
         { id: '20', name: 'Quoted', username: 'quoted', profile_image_url: 'quote.jpg' },
       ],
-      tweets: [{ id: '200', text: 'quoted text', author_id: '20' }],
+      tweets: [{ id: '200', text: 'quoted text', author_id: '20', created_at: '2026-08-19T05:00:00.000Z' }],
       media: [
-        { media_key: '3_photo', url: 'photo.jpg' },
-        { media_key: '7_video', preview_image_url: 'video.jpg' },
+        { media_key: '3_photo', type: 'photo', url: 'photo.jpg' },
+        { media_key: '7_video', type: 'video', preview_image_url: 'video.jpg' },
       ],
     },
     meta: { result_count: 1, next_token: 'next-page' },
@@ -35,12 +35,19 @@ test('parses official bookmarks with author, media, quote, and pagination data',
   assert.equal(page.bookmarks[0].fullText, 'complete long-form text');
   assert.equal(page.bookmarks[0].tweetUrl, 'https://x.com/author/status/100');
   assert.deepEqual(JSON.parse(page.bookmarks[0].mediaUrls ?? '[]'), ['photo.jpg', 'video.jpg']);
+  assert.deepEqual(JSON.parse(page.bookmarks[0].mediaMetadata ?? '[]'), [
+    { media_key: '3_photo', type: 'photo', url: 'photo.jpg', preview_image_url: null },
+    { media_key: '7_video', type: 'video', url: null, preview_image_url: 'video.jpg' },
+  ]);
   assert.deepEqual(JSON.parse(page.bookmarks[0].quotedTweet ?? '{}'), {
     tweet_id: '200',
     full_text: 'quoted text',
     author_name: 'Quoted',
     author_handle: 'quoted',
     author_avatar: 'quote.jpg',
+    tweet_url: 'https://x.com/quoted/status/200',
+    created_at: '2026-08-19T05:00:00.000Z',
+    media: [],
   });
 });
 

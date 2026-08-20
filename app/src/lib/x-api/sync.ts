@@ -13,6 +13,9 @@ import {
   getValidXAccessToken,
   refreshXAccessToken,
 } from './oauth';
+import { fetchWithDeadline } from './fetch';
+import { createVerifiedDatabaseBackup } from '@/lib/db/backup';
+import { rawDb } from '@/lib/db/client';
 
 class XApiRequestError extends Error {
   constructor(
@@ -26,10 +29,10 @@ class XApiRequestError extends Error {
 }
 
 async function fetchPage(userId: string, cursor: string | null, accessToken: string) {
-  const response = await fetch(bookmarkRequestUrl(userId, cursor), {
+  const response = await fetchWithDeadline(bookmarkRequestUrl(userId, cursor), {
     headers: { Authorization: `Bearer ${accessToken}` },
     cache: 'no-store',
-  });
+  }, 2);
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
     const detail = getOfficialApiError(payload);
@@ -75,6 +78,7 @@ export async function syncOfficialBookmarks(requestedMode: SyncMode) {
   let cursor: string | null = null;
 
   try {
+    if (run.mode === 'full') await createVerifiedDatabaseBackup(rawDb, 'pre-full-sync');
     while (true) {
       let page;
       try {

@@ -90,6 +90,10 @@ export function extractTweetData(value: unknown): XBookmarkRecord | null {
       authorAvatar: asString(userLegacy.profile_image_url_https),
       tweetUrl: `https://x.com/${authorHandle}/status/${tweetId}`,
       mediaUrls: mediaUrls.length > 0 ? JSON.stringify(mediaUrls) : null,
+      mediaMetadata:
+        mediaUrls.length > 0
+          ? JSON.stringify(mediaUrls.map((url) => ({ type: 'unknown', url })))
+          : null,
       quotedTweet: quotedTweet ? JSON.stringify(quotedTweet) : null,
       tweetCreatedAt: Number.isFinite(createdAtMs) ? Math.floor(createdAtMs / 1000) : null,
     };

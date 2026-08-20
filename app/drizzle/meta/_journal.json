@@ -29,6 +29,20 @@
       "when": 1787205014043,
       "tag": "0003_smiling_rhodey",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1787232470627,
+      "tag": "0004_narrow_sunfire",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1787232928712,
+      "tag": "0005_lying_vanisher",
+      "breakpoints": true
     }
   ]
 }

@@ -60,38 +60,45 @@ export async function GET(req: NextRequest) {
   const folderId = searchParams.get('folder_id');
   const tagName = searchParams.get('tag');
   const sort = searchParams.get('sort') || 'bookmarked_at_desc';
-  const perPage = Math.min(parseInt(searchParams.get('per_page') || '40', 10), 100);
-  const page = Math.max(parseInt(searchParams.get('page') || '1', 10), 1);
+  const rawPerPage = searchParams.get('per_page') ?? '40';
+  const rawPage = searchParams.get('page') ?? '1';
+  if (!/^\d+$/.test(rawPerPage) || !/^\d+$/.test(rawPage)) {
+    return Response.json({ error: 'page and per_page must be positive integers' }, { status: 400 });
+  }
+  const perPage = Number(rawPerPage);
+  const page = Number(rawPage);
+  if (perPage < 1 || perPage > 100 || page < 1 || !Number.isSafeInteger(page)) {
+    return Response.json(
+      { error: 'page must be at least 1 and per_page must be between 1 and 100' },
+      { status: 400 },
+    );
+  }
   const offset = (page - 1) * perPage;
+  if (!Number.isSafeInteger(offset)) {
+    return Response.json({ error: 'page is too large' }, { status: 400 });
+  }
 
   const conditions: string[] = ['b.remote_present = 1', 'b.hidden_at IS NULL'];
   const params: (string | number)[] = [];
+  const joins: string[] = [];
 
   if (search) {
-    // Use FTS5 to find matching IDs, then filter main query
-    const ftsQuery = search
-      .split(/\s+/)
-      .filter(Boolean)
-      .map((w) => `${w.replace(/[^a-zA-Z0-9]/g, '')}*`)
-      .join(' ');
-    const ftsRows = rawDb
-      .prepare(
-        `SELECT rowid FROM bookmarks_fts WHERE bookmarks_fts MATCH ? ORDER BY rank LIMIT 500`,
-      )
-      .all(ftsQuery) as { rowid: number }[];
-    if (ftsRows.length === 0) {
-      return Response.json({
-        data: [],
-        meta: { total: 0, per_page: perPage, current_page: page, last_page: 1 },
-      });
+    const tokens = search.normalize('NFKC').match(/[\p{L}\p{N}_]+/gu)?.slice(0, 32) ?? [];
+    if (tokens.length === 0) {
+      return Response.json({ error: 'search must contain letters or numbers' }, { status: 400 });
     }
-    const ids = ftsRows.map((r) => r.rowid).join(',');
-    conditions.push(`b.id IN (${ids})`);
+    const ftsQuery = tokens.map((token) => `"${token.replaceAll('"', '""')}"*`).join(' AND ');
+    joins.push('JOIN bookmarks_fts ON bookmarks_fts.rowid = b.id');
+    conditions.push('bookmarks_fts MATCH ?');
+    params.push(ftsQuery);
   }
 
   if (folderId) {
+    if (!/^\d+$/.test(folderId) || Number(folderId) < 1) {
+      return Response.json({ error: 'folder_id must be a positive integer' }, { status: 400 });
+    }
     conditions.push(`EXISTS (SELECT 1 FROM bookmark_folders bf2 WHERE bf2.bookmark_id = b.id AND bf2.folder_id = ?)`);
-    params.push(parseInt(folderId, 10));
+    params.push(Number(folderId));
   }
 
   if (tagName) {
@@ -110,12 +117,14 @@ export async function GET(req: NextRequest) {
   };
   const orderBy = sortMap[sort] || sortMap.bookmarked_at_desc;
 
-  const countSql = `SELECT COUNT(DISTINCT b.id) as cnt FROM bookmarks b ${whereClause}`;
+  const joinClause = joins.join('\n');
+  const countSql = `SELECT COUNT(DISTINCT b.id) as cnt FROM bookmarks b ${joinClause} ${whereClause}`;
   const totalRow = rawDb.prepare(countSql).get(...params) as { cnt: number };
   const total = totalRow?.cnt ?? 0;
 
   const dataSql = `
     ${BASE_SELECT}
+    ${joinClause}
     ${whereClause}
     GROUP BY b.id
     ORDER BY ${orderBy}

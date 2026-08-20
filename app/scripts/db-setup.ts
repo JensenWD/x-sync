@@ -25,42 +25,16 @@ const db = drizzle(sqlite);
 migrate(db, { migrationsFolder: path.join(process.cwd(), 'drizzle') });
 console.log('✓ Migrations applied');
 
-// Create FTS5 virtual table and triggers
-sqlite.exec(`
-  CREATE VIRTUAL TABLE IF NOT EXISTS bookmarks_fts USING fts5(
-    full_text,
-    author_name,
-    author_handle,
-    content='bookmarks',
-    content_rowid='id',
-    tokenize='porter unicode61'
-  );
-
-  CREATE TRIGGER IF NOT EXISTS bookmarks_ai
-  AFTER INSERT ON bookmarks BEGIN
-    INSERT INTO bookmarks_fts(rowid, full_text, author_name, author_handle)
-    VALUES (new.id, new.full_text, new.author_name, new.author_handle);
-  END;
-
-  CREATE TRIGGER IF NOT EXISTS bookmarks_ad
-  AFTER DELETE ON bookmarks BEGIN
-    INSERT INTO bookmarks_fts(bookmarks_fts, rowid, full_text, author_name, author_handle)
-    VALUES ('delete', old.id, old.full_text, old.author_name, old.author_handle);
-  END;
-
-  CREATE TRIGGER IF NOT EXISTS bookmarks_au_before
-  BEFORE UPDATE ON bookmarks BEGIN
-    INSERT INTO bookmarks_fts(bookmarks_fts, rowid, full_text, author_name, author_handle)
-    VALUES ('delete', old.id, old.full_text, old.author_name, old.author_handle);
-  END;
-
-  CREATE TRIGGER IF NOT EXISTS bookmarks_au_after
-  AFTER UPDATE ON bookmarks BEGIN
-    INSERT INTO bookmarks_fts(rowid, full_text, author_name, author_handle)
-    VALUES (new.id, new.full_text, new.author_name, new.author_handle);
-  END;
-`);
-console.log('✓ FTS5 table and triggers created');
+const bookmarkCount = Number(
+  (sqlite.prepare('SELECT COUNT(*) AS count FROM bookmarks').get() as { count: number }).count,
+);
+const ftsCount = Number(
+  (sqlite.prepare('SELECT COUNT(*) AS count FROM bookmarks_fts').get() as { count: number }).count,
+);
+if (bookmarkCount !== ftsCount) {
+  throw new Error(`FTS verification failed: ${ftsCount} indexed rows for ${bookmarkCount} bookmarks`);
+}
+console.log('✓ Versioned FTS5 tables and triggers verified');
 
 const tables = sqlite
   .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")

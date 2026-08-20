@@ -7,6 +7,7 @@ import {
   shouldStopIncremental,
   SyncAlreadyRunningError,
   SyncCursorMismatchError,
+  SyncReconciliationBlockedError,
 } from '../src/lib/x-sync/store';
 import type { ParsedTimelinePage, XBookmarkRecord } from '../src/lib/x-sync/types';
 
@@ -22,6 +23,7 @@ function createDatabase() {
       author_avatar TEXT,
       tweet_url TEXT NOT NULL DEFAULT '',
       media_urls TEXT,
+      media_metadata TEXT,
       quoted_tweet TEXT,
       bookmarked_at INTEGER,
       synced_at INTEGER,
@@ -46,6 +48,9 @@ function createDatabase() {
       bookmarks_inserted INTEGER NOT NULL DEFAULT 0,
       bookmarks_existing INTEGER NOT NULL DEFAULT 0,
       remote_removed INTEGER NOT NULL DEFAULT 0,
+      baseline_remote_count INTEGER NOT NULL DEFAULT 0,
+      skipped_tweet_count INTEGER NOT NULL DEFAULT 0,
+      reconciliation_fingerprint TEXT,
       stop_reason TEXT,
       error_code TEXT,
       error_message TEXT
@@ -56,6 +61,9 @@ function createDatabase() {
       last_synced_at INTEGER,
       last_full_synced_at INTEGER,
       last_error TEXT,
+      reconciliation_candidate_fingerprint TEXT,
+      reconciliation_candidate_count INTEGER,
+      reconciliation_candidate_at INTEGER,
       updated_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
     CREATE TABLE sync_run_seen_tweets (
@@ -93,6 +101,7 @@ function bookmark(tweetId: string): XBookmarkRecord {
     authorAvatar: null,
     tweetUrl: `https://x.com/author/status/${tweetId}`,
     mediaUrls: null,
+    mediaMetadata: null,
     quotedTweet: null,
     tweetCreatedAt: 100,
   };
@@ -240,5 +249,60 @@ test('seen rows survive store instances until a full run completes', () => {
     ).count,
     0,
   );
+  sqlite.close();
+});
+
+test('a suspicious full-sync drop is quarantined and requires the same result twice', () => {
+  const sqlite = createDatabase();
+  const insert = sqlite.prepare('INSERT INTO bookmarks (tweet_id) VALUES (?)');
+  for (let index = 0; index < 100; index += 1) insert.run(`old-${index}`);
+  const observed = Array.from({ length: 10 }, (_, index) => bookmark(`old-${index}`));
+
+  const firstStore = new BookmarkSyncStore(sqlite);
+  const firstRun = firstStore.startRun('full', 1_000);
+  firstStore.recordBrowserPage(firstRun.id, null, page(observed, null), 1_001);
+  assert.throws(
+    () => firstStore.completeRun(firstRun.id, 'end_of_timeline', 1_002),
+    SyncReconciliationBlockedError,
+  );
+  assert.equal(firstStore.getRun(firstRun.id).status, 'quarantined');
+  assert.equal(
+    (sqlite.prepare('SELECT COUNT(*) AS count FROM bookmarks WHERE remote_present = 1').get() as { count: number }).count,
+    100,
+  );
+
+  const secondStore = new BookmarkSyncStore(sqlite);
+  const secondRun = secondStore.startRun('full', 1_100);
+  secondStore.recordBrowserPage(secondRun.id, null, page(observed, null), 1_101);
+  const confirmed = secondStore.completeRun(secondRun.id, 'end_of_timeline', 1_102);
+  assert.equal(confirmed.remote_removed, 90);
+  assert.equal(confirmed.total_bookmarks, 10);
+  sqlite.close();
+});
+
+test('failed sync pages do not rewrite the last successful remote ordering', () => {
+  const sqlite = createDatabase();
+  sqlite
+    .prepare(
+      `INSERT INTO bookmarks (tweet_id, remote_order_run_id, remote_order_position)
+       VALUES ('old-1', 50, 0), ('old-2', 50, 1)`,
+    )
+    .run();
+  const store = new BookmarkSyncStore(sqlite);
+  const run = store.startRun('full', 1_000);
+  store.recordBrowserPage(run.id, null, page([bookmark('old-2'), bookmark('new-1')], 'next'), 1_001);
+  store.failRun(run.id, 'network_failed', 'network failed', 1_002);
+
+  const rows = sqlite
+    .prepare(
+      `SELECT tweet_id, remote_order_run_id, remote_order_position
+       FROM bookmarks ORDER BY tweet_id`,
+    )
+    .all() as { tweet_id: string; remote_order_run_id: number | null; remote_order_position: number | null }[];
+  assert.deepEqual(rows, [
+    { tweet_id: 'new-1', remote_order_run_id: null, remote_order_position: null },
+    { tweet_id: 'old-1', remote_order_run_id: 50, remote_order_position: 0 },
+    { tweet_id: 'old-2', remote_order_run_id: 50, remote_order_position: 1 },
+  ]);
   sqlite.close();
 });

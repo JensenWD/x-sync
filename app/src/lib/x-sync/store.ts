@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3';
+import { createHash } from 'node:crypto';
 import type {
   BrowserPageRecordResult,
   DurableSyncStatus,
@@ -13,12 +14,18 @@ import type {
 const FULL_SYNC_INTERVAL_SECONDS = 7 * 24 * 60 * 60;
 const STALE_RUN_SECONDS = 10 * 60;
 const FIRST_PAGE_CURSOR_KEY = 'first-page';
+const RECONCILIATION_CONFIRMATION_SECONDS = 24 * 60 * 60;
+const MASS_ARCHIVE_MINIMUM_BASELINE = 100;
+const MASS_ARCHIVE_REMAINING_RATIO = 0.8;
 
 interface SyncStateRow {
   last_successful_run_id: number | null;
   last_synced_at: number | null;
   last_full_synced_at: number | null;
   last_error: string | null;
+  reconciliation_candidate_fingerprint: string | null;
+  reconciliation_candidate_count: number | null;
+  reconciliation_candidate_at: number | null;
 }
 
 interface StoredPageRow {
@@ -53,6 +60,19 @@ export class SyncCursorMismatchError extends Error {
   constructor() {
     super('The browser uploaded bookmark pages out of order');
     this.name = 'SyncCursorMismatchError';
+  }
+}
+
+export class SyncReconciliationBlockedError extends Error {
+  constructor(
+    public readonly run: SyncRunSummary,
+    public readonly baselineCount: number,
+    public readonly observedCount: number,
+  ) {
+    super(
+      `Full sync saw ${observedCount} bookmarks versus the prior ${baselineCount}; no bookmarks were archived. Repeat the full sync to confirm the same result.`,
+    );
+    this.name = 'SyncReconciliationBlockedError';
   }
 }
 
@@ -119,10 +139,10 @@ export class BookmarkSyncStore {
       const result = this.sqlite
         .prepare(
           `INSERT INTO sync_runs
-             (requested_mode, mode, status, started_at, heartbeat_at)
-           VALUES (?, ?, 'running', ?, ?)`,
+             (requested_mode, mode, status, started_at, heartbeat_at, baseline_remote_count)
+           VALUES (?, ?, 'running', ?, ?, ?)`,
         )
-        .run(requestedMode, mode, now, now);
+        .run(requestedMode, mode, now, now, totalRemote);
       return this.getRun(Number(result.lastInsertRowid));
     });
 
@@ -193,10 +213,10 @@ export class BookmarkSyncStore {
       const upsert = this.sqlite.prepare(`
         INSERT INTO bookmarks
           (tweet_id, full_text, author_name, author_handle, author_avatar,
-           tweet_url, media_urls, quoted_tweet, bookmarked_at, synced_at,
-           remote_present, removed_from_x_at, remote_order_run_id, remote_order_position,
+           tweet_url, media_urls, media_metadata, quoted_tweet, bookmarked_at, synced_at,
+           remote_present, removed_from_x_at,
            created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, ?, ?, unixepoch(), unixepoch())
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, unixepoch(), unixepoch())
         ON CONFLICT(tweet_id) DO UPDATE SET
           full_text = excluded.full_text,
           author_name = excluded.author_name,
@@ -204,13 +224,12 @@ export class BookmarkSyncStore {
           author_avatar = excluded.author_avatar,
           tweet_url = excluded.tweet_url,
           media_urls = excluded.media_urls,
+          media_metadata = excluded.media_metadata,
           quoted_tweet = excluded.quoted_tweet,
           bookmarked_at = excluded.bookmarked_at,
           synced_at = excluded.synced_at,
           remote_present = 1,
           removed_from_x_at = NULL,
-          remote_order_run_id = excluded.remote_order_run_id,
-          remote_order_position = excluded.remote_order_position,
           updated_at = unixepoch()
       `);
       for (const row of uniqueBookmarks) {
@@ -223,11 +242,10 @@ export class BookmarkSyncStore {
           item.authorAvatar,
           item.tweetUrl,
           item.mediaUrls,
+          item.mediaMetadata,
           item.quotedTweet,
           item.tweetCreatedAt,
           now,
-          runId,
-          row.position,
         );
       }
 
@@ -261,10 +279,11 @@ export class BookmarkSyncStore {
                bookmarks_fetched = bookmarks_fetched + ?,
                bookmarks_inserted = bookmarks_inserted + ?,
                bookmarks_existing = bookmarks_existing + ?,
+               skipped_tweet_count = skipped_tweet_count + ?,
                heartbeat_at = ?
            WHERE id = ? AND status = 'running'`,
         )
-        .run(uniqueBookmarks.length, inserted, existingCount, now, runId);
+        .run(uniqueBookmarks.length, inserted, existingCount, page.skippedTweetCount, now, runId);
 
       return this.browserPageResult(runId, page.nextCursor, false);
     });
@@ -275,8 +294,83 @@ export class BookmarkSyncStore {
   completeRun(runId: number, stopReason: string, now: number): SyncResult {
     const complete = this.sqlite.transaction(() => {
       const run = this.getRun(runId);
-      if (run.status === 'success') return this.getRunResult(runId);
+      if (run.status === 'success') {
+        return { blocked: false as const, result: this.getRunResult(runId) };
+      }
       if (run.status !== 'running') throw new SyncRunStateError(run);
+
+      const seenRows = this.sqlite
+        .prepare(
+          `SELECT tweet_id FROM sync_run_seen_tweets WHERE run_id = ? ORDER BY remote_position`,
+        )
+        .all(runId) as { tweet_id: string }[];
+      const observedCount = seenRows.length;
+      const reconciliationFingerprint = createHash('sha256')
+        .update(seenRows.map((row) => row.tweet_id).join('\n'))
+        .digest('hex');
+      const state = this.sqlite
+        .prepare('SELECT * FROM sync_state WHERE id = 1')
+        .get() as SyncStateRow;
+      const suspiciousCountDrop =
+        run.mode === 'full' &&
+        run.baseline_remote_count >= MASS_ARCHIVE_MINIMUM_BASELINE &&
+        observedCount < Math.ceil(run.baseline_remote_count * MASS_ARCHIVE_REMAINING_RATIO);
+      const suspiciousSkippedItems =
+        run.mode === 'full' &&
+        run.skipped_tweet_count > Math.max(5, Math.ceil(Math.max(observedCount, 1) * 0.02));
+      const isConfirmedRepeat =
+        state.reconciliation_candidate_fingerprint === reconciliationFingerprint &&
+        state.reconciliation_candidate_count === observedCount &&
+        state.reconciliation_candidate_at !== null &&
+        state.reconciliation_candidate_at >= now - RECONCILIATION_CONFIRMATION_SECONDS;
+
+      if ((suspiciousCountDrop || suspiciousSkippedItems) && !isConfirmedRepeat) {
+        const message =
+          `Full sync saw ${observedCount} bookmarks versus the prior ${run.baseline_remote_count}; ` +
+          'no bookmarks were archived. Repeat the full sync to confirm the same result.';
+        this.sqlite
+          .prepare(
+            `UPDATE sync_runs
+             SET status = 'quarantined', heartbeat_at = ?, finished_at = ?,
+                 stop_reason = 'reconciliation_quarantined',
+                 error_code = 'x_full_sync_anomaly', error_message = ?,
+                 reconciliation_fingerprint = ?
+             WHERE id = ? AND status = 'running'`,
+          )
+          .run(now, now, message, reconciliationFingerprint, runId);
+        this.sqlite
+          .prepare(
+            `UPDATE sync_state
+             SET last_error = ?, reconciliation_candidate_fingerprint = ?,
+                 reconciliation_candidate_count = ?, reconciliation_candidate_at = ?,
+                 updated_at = ?
+             WHERE id = 1`,
+          )
+          .run(message, reconciliationFingerprint, observedCount, now, now);
+        this.sqlite.prepare('DELETE FROM sync_run_seen_tweets WHERE run_id = ?').run(runId);
+        return {
+          blocked: true as const,
+          run: this.getRun(runId),
+          baselineCount: run.baseline_remote_count,
+          observedCount,
+        };
+      }
+
+      this.sqlite
+        .prepare(
+          `UPDATE bookmarks
+           SET remote_order_run_id = ?,
+               remote_order_position = (
+                 SELECT seen.remote_position FROM sync_run_seen_tweets seen
+                 WHERE seen.run_id = ? AND seen.tweet_id = bookmarks.tweet_id
+               ),
+               updated_at = unixepoch()
+           WHERE EXISTS (
+             SELECT 1 FROM sync_run_seen_tweets seen
+             WHERE seen.run_id = ? AND seen.tweet_id = bookmarks.tweet_id
+           )`,
+        )
+        .run(runId, runId, runId);
 
       let remoteRemoved = 0;
       if (run.mode === 'full') {
@@ -305,6 +399,11 @@ export class BookmarkSyncStore {
         .run(now, now, stopReason, remoteRemoved, runId);
       this.sqlite
         .prepare(
+          `UPDATE sync_runs SET reconciliation_fingerprint = ? WHERE id = ?`,
+        )
+        .run(reconciliationFingerprint, runId);
+      this.sqlite
+        .prepare(
           `INSERT INTO sync_state
              (id, last_successful_run_id, last_synced_at, last_full_synced_at, last_error, updated_at)
            VALUES (1, ?, ?, ?, NULL, ?)
@@ -316,16 +415,39 @@ export class BookmarkSyncStore {
                ELSE sync_state.last_full_synced_at
              END,
              last_error = NULL,
+             reconciliation_candidate_fingerprint = CASE
+               WHEN ? = 'full' THEN NULL ELSE sync_state.reconciliation_candidate_fingerprint END,
+             reconciliation_candidate_count = CASE
+               WHEN ? = 'full' THEN NULL ELSE sync_state.reconciliation_candidate_count END,
+             reconciliation_candidate_at = CASE
+               WHEN ? = 'full' THEN NULL ELSE sync_state.reconciliation_candidate_at END,
              updated_at = excluded.updated_at`,
         )
-        .run(runId, now, run.mode === 'full' ? now : null, now, run.mode);
+        .run(
+          runId,
+          now,
+          run.mode === 'full' ? now : null,
+          now,
+          run.mode,
+          run.mode,
+          run.mode,
+          run.mode,
+        );
       this.sqlite
         .prepare(`DELETE FROM sync_run_seen_tweets WHERE run_id = ?`)
         .run(runId);
 
-      return this.getRunResult(runId);
+      return { blocked: false as const, result: this.getRunResult(runId) };
     });
-    return complete.immediate();
+    const result = complete.immediate();
+    if (result.blocked) {
+      throw new SyncReconciliationBlockedError(
+        result.run,
+        result.baselineCount,
+        result.observedCount,
+      );
+    }
+    return result.result;
   }
 
   failRun(runId: number, errorCode: string, errorMessage: string, now: number) {

@@ -43,9 +43,14 @@ export function useDeleteBookmark() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => fetchJson(`/api/bookmarks/${id}`, { method: 'DELETE' }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['bookmarks'] });
-      queryClient.invalidateQueries({ queryKey: ['bookmark'] });
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['bookmarks'] }),
+        queryClient.invalidateQueries({ queryKey: ['bookmark'] }),
+        queryClient.invalidateQueries({ queryKey: ['folders'] }),
+        queryClient.invalidateQueries({ queryKey: ['tags'] }),
+        queryClient.invalidateQueries({ queryKey: ['sync-status'] }),
+      ]);
     },
   });
 }

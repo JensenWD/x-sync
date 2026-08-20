@@ -771,8 +771,8 @@ export function queryBookmarks(
   };
 }
 
-export function getBookmarkQueryFacets(sqlite: Database.Database) {
-  const folders = sqlite
+export function getFolderFacets(sqlite: Database.Database) {
+  return sqlite
     .prepare(
       `SELECT f.id, f.name, f.color, COUNT(b.id) AS bookmark_count
        FROM folders f
@@ -783,7 +783,10 @@ export function getBookmarkQueryFacets(sqlite: Database.Database) {
        ORDER BY lower(f.name), f.id`,
     )
     .all() as { id: number; name: string; color: string | null; bookmark_count: number }[];
-  const tags = sqlite
+}
+
+export function getTagFacets(sqlite: Database.Database) {
+  return sqlite
     .prepare(
       `SELECT t.id, t.name, COUNT(b.id) AS bookmark_count
        FROM tags t
@@ -794,6 +797,11 @@ export function getBookmarkQueryFacets(sqlite: Database.Database) {
        ORDER BY lower(t.name), t.id`,
     )
     .all() as { id: number; name: string; bookmark_count: number }[];
+}
+
+export function getBookmarkQueryFacets(sqlite: Database.Database) {
+  const folders = getFolderFacets(sqlite);
+  const tags = getTagFacets(sqlite);
 
   return { folders, tags };
 }

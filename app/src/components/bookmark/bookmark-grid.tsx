@@ -5,6 +5,7 @@ import { BookmarkXIcon } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { BookmarkCard } from './bookmark-card';
 import { useLibraryFilters } from '@/hooks/use-library-filters';
+import { useLibraryScroll } from '@/hooks/use-library-scroll';
 import { cn } from '@/lib/utils';
 import type { BookmarksResponse } from '@/types';
 
@@ -13,16 +14,29 @@ import type { BookmarksResponse } from '@/types';
  * column on a phone (3a). Cards never split across a column break.
  */
 export function BookmarkGrid({ query }: { query: UseQueryResult<BookmarksResponse> }) {
-  const { hasFilters, page, setPage } = useLibraryFilters();
+  const { search, folderId, tags, tagMode, sort, hasFilters, page, postId, setPage } =
+    useLibraryFilters();
   const { data, isLoading, isFetching } = query;
   const bookmarks = data?.data ?? [];
   const meta = data?.meta;
+  const viewKey = JSON.stringify({ search, folderId, tags, tagMode, sort, page });
+  const contentVersion = `${meta?.total ?? 0}:${bookmarks.map((bookmark) => bookmark.id).join(',')}`;
+  const { scrollRef, rememberScroll } = useLibraryScroll(
+    viewKey,
+    postId !== null,
+    contentVersion,
+  );
 
   const columns =
     'columns-1 gap-x-5 md:columns-2 xl:columns-3 [&>*]:mb-3.5 md:[&>*]:mb-5 [&>*]:break-inside-avoid';
 
   return (
-    <div className="flex-1 overflow-y-auto px-5 pt-3 pb-16 md:px-8 md:pt-4 md:pb-8">
+    <div
+      ref={scrollRef}
+      data-library-scroll
+      onScroll={rememberScroll}
+      className="flex-1 overflow-y-auto px-5 pt-3 pb-16 md:px-8 md:pt-4 md:pb-8"
+    >
       {isLoading ? (
         <div className={columns}>
           {Array.from({ length: 9 }).map((_, index) => (

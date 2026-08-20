@@ -5,6 +5,7 @@ import type {
   DurableSyncStatus,
   EffectiveSyncMode,
   ParsedTimelinePage,
+  ReconciliationConfirmation,
   SyncMode,
   SyncResult,
   SyncRunSummary,
@@ -68,9 +69,10 @@ export class SyncReconciliationBlockedError extends Error {
     public readonly run: SyncRunSummary,
     public readonly baselineCount: number,
     public readonly observedCount: number,
+    public readonly fingerprint: string,
   ) {
     super(
-      `Full sync saw ${observedCount} bookmarks versus the prior ${baselineCount}; no bookmarks were archived. Repeat the full sync to confirm the same result.`,
+      `Full sync saw ${observedCount} bookmarks versus the prior ${baselineCount}; no bookmarks were archived. Explicit confirmation is required before reconciling this result.`,
     );
     this.name = 'SyncReconciliationBlockedError';
   }
@@ -291,7 +293,12 @@ export class BookmarkSyncStore {
     return record.immediate();
   }
 
-  completeRun(runId: number, stopReason: string, now: number): SyncResult {
+  completeRun(
+    runId: number,
+    stopReason: string,
+    now: number,
+    confirmation: ReconciliationConfirmation | null = null,
+  ): SyncResult {
     const complete = this.sqlite.transaction(() => {
       const run = this.getRun(runId);
       if (run.status === 'success') {
@@ -322,12 +329,14 @@ export class BookmarkSyncStore {
         state.reconciliation_candidate_fingerprint === reconciliationFingerprint &&
         state.reconciliation_candidate_count === observedCount &&
         state.reconciliation_candidate_at !== null &&
-        state.reconciliation_candidate_at >= now - RECONCILIATION_CONFIRMATION_SECONDS;
+        state.reconciliation_candidate_at >= now - RECONCILIATION_CONFIRMATION_SECONDS &&
+        confirmation?.fingerprint === reconciliationFingerprint &&
+        confirmation.observed_count === observedCount;
 
       if ((suspiciousCountDrop || suspiciousSkippedItems) && !isConfirmedRepeat) {
         const message =
           `Full sync saw ${observedCount} bookmarks versus the prior ${run.baseline_remote_count}; ` +
-          'no bookmarks were archived. Repeat the full sync to confirm the same result.';
+          'no bookmarks were archived. Explicit confirmation is required before reconciling this result.';
         this.sqlite
           .prepare(
             `UPDATE sync_runs
@@ -445,6 +454,7 @@ export class BookmarkSyncStore {
         result.run,
         result.baselineCount,
         result.observedCount,
+        result.run.reconciliation_fingerprint ?? '',
       );
     }
     return result.result;

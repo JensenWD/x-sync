@@ -2,6 +2,29 @@ import { useEffect, useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { SyncRun, SyncStatus, XConnectionStatus } from '@/types';
 
+export interface ReconciliationConfirmation {
+  fingerprint: string;
+  observed_count: number;
+}
+
+interface SyncErrorDetails {
+  baseline_count: number;
+  observed_count: number;
+  archive_count: number;
+  reconciliation_confirmation: ReconciliationConfirmation;
+}
+
+export class SyncRequestError extends Error {
+  constructor(
+    message: string,
+    public readonly code: string | null,
+    public readonly details: SyncErrorDetails | null,
+  ) {
+    super(message);
+    this.name = 'SyncRequestError';
+  }
+}
+
 export function useSyncStatus() {
   const queryClient = useQueryClient();
   const previousSuccessfulSync = useRef<number | null | undefined>(undefined);
@@ -46,19 +69,29 @@ export function useXConnection() {
 
 export function useOfficialSync() {
   const queryClient = useQueryClient();
-  return useMutation<SyncRun, Error, 'incremental' | 'full'>({
-    mutationFn: async (mode) => {
+  return useMutation<
+    SyncRun,
+    SyncRequestError,
+    { mode: 'incremental' | 'full'; reconciliation_confirmation?: ReconciliationConfirmation }
+  >({
+    mutationFn: async ({ mode, reconciliation_confirmation }) => {
       const response = await fetch('/api/x/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'official', mode }),
+        body: JSON.stringify({ action: 'official', mode, reconciliation_confirmation }),
       });
       const result = await response.json().catch(() => null) as {
+        code?: string;
+        details?: SyncErrorDetails;
         error?: string;
         run?: SyncRun;
       } | null;
       if (!response.ok || !result?.run) {
-        throw new Error(result?.error ?? 'X bookmark sync failed.');
+        throw new SyncRequestError(
+          result?.error ?? 'X bookmark sync failed.',
+          result?.code ?? null,
+          result?.details ?? null,
+        );
       }
       return result.run;
     },

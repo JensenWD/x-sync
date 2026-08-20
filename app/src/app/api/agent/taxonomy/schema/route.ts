@@ -22,6 +22,11 @@ export async function GET() {
         rollback_default: 'dry_run=true',
         manual_assignments: 'protected from agent removal',
         concurrency: 'Every proposal must include the content_hash returned by the bookmark query API.',
+        rollback_concurrency:
+          'Rollback fails if a manual or newer agent change altered the applied state.',
+        idempotency:
+          'Keys are bound to the exact request body and workflow; mismatched reuse fails with HTTP 409.',
+        unknown_fields: 'Rejected at every documented object boundary.',
       },
       endpoints: {
         proposals: 'GET/POST /api/agent/taxonomy/proposals',

@@ -9,6 +9,7 @@ import {
 } from '@/lib/x-bookmark-service';
 import { syncOfficialBookmarks } from '@/lib/x-api/sync';
 import { NextRequest } from 'next/server';
+import type { ReconciliationConfirmation } from '@/lib/x-sync/types';
 
 export const maxDuration = 300;
 
@@ -36,6 +37,29 @@ function isCursor(value: unknown): value is string | null {
 
 function isSafeCode(value: unknown): value is string {
   return typeof value === 'string' && /^[a-z0-9_]{1,100}$/.test(value);
+}
+
+function reconciliationConfirmation(value: unknown): ReconciliationConfirmation | null {
+  if (value === undefined || value === null) return null;
+  if (!isObject(value)) throw new Error('reconciliation_confirmation must be an object');
+  const unknown = Object.keys(value).find(
+    (key) => key !== 'fingerprint' && key !== 'observed_count',
+  );
+  if (unknown) throw new Error(`Unknown reconciliation_confirmation field: ${unknown}`);
+  if (
+    typeof value.fingerprint !== 'string' ||
+    !/^[a-f0-9]{64}$/u.test(value.fingerprint) ||
+    !Number.isSafeInteger(value.observed_count) ||
+    Number(value.observed_count) < 0
+  ) {
+    throw new Error(
+      'reconciliation_confirmation requires a SHA-256 fingerprint and non-negative observed_count',
+    );
+  }
+  return {
+    fingerprint: value.fingerprint,
+    observed_count: Number(value.observed_count),
+  };
 }
 
 export async function POST(req: NextRequest) {
@@ -73,7 +97,22 @@ export async function POST(req: NextRequest) {
       if (typeof requestedMode !== 'string' || !MODES.has(requestedMode as SyncMode)) {
         return json({ status: 'error', error: 'mode must be auto, incremental, or full' }, 400);
       }
-      const run = await syncOfficialBookmarks(requestedMode as SyncMode);
+      let confirmation: ReconciliationConfirmation | null;
+      try {
+        confirmation = reconciliationConfirmation(body.reconciliation_confirmation);
+      } catch (error) {
+        return json(
+          { status: 'error', error: error instanceof Error ? error.message : 'Invalid confirmation' },
+          400,
+        );
+      }
+      if (confirmation && requestedMode !== 'full') {
+        return json(
+          { status: 'error', error: 'reconciliation_confirmation is only valid for full sync' },
+          400,
+        );
+      }
+      const run = await syncOfficialBookmarks(requestedMode as SyncMode, confirmation);
       return json({ status: 'success', run });
     }
 
@@ -113,7 +152,10 @@ export async function POST(req: NextRequest) {
       return json({ status: 'error', code: 'sync_run_not_found', error: error.message }, 404);
     }
     if (error instanceof BrowserSyncError) {
-      return json({ status: 'error', code: error.code, error: error.message }, error.httpStatus);
+      return json(
+        { status: 'error', code: error.code, error: error.message, details: error.details },
+        error.httpStatus,
+      );
     }
     return json({ status: 'error', code: 'sync_failed', error: 'Bookmark sync failed.' }, 500);
   }

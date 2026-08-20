@@ -58,6 +58,9 @@ function createDatabase() {
       id INTEGER PRIMARY KEY,
       last_successful_run_id INTEGER
     );
+    CREATE TABLE library_revision_state (
+      id INTEGER PRIMARY KEY, revision INTEGER NOT NULL, updated_at INTEGER NOT NULL
+    );
     CREATE TABLE taxonomy_events (
       id INTEGER PRIMARY KEY,
       applied_at INTEGER,
@@ -88,6 +91,12 @@ function createDatabase() {
       processed_at INTEGER,
       updated_at INTEGER NOT NULL
     );
+    CREATE TRIGGER library_revision_bookmark_tags_ai AFTER INSERT ON bookmark_tags BEGIN
+      UPDATE library_revision_state SET revision = revision + 1 WHERE id = 1;
+    END;
+    CREATE TRIGGER library_revision_taxonomy_assignments_ai AFTER INSERT ON taxonomy_assignments BEGIN
+      UPDATE library_revision_state SET revision = revision + 1 WHERE id = 1;
+    END;
     CREATE VIRTUAL TABLE bookmarks_fts USING fts5(
       full_text,
       author_name,
@@ -107,6 +116,7 @@ function createDatabase() {
       tokenize='porter unicode61'
     );
 
+    INSERT INTO library_revision_state (id, revision, updated_at) VALUES (1, 1, 1);
     INSERT INTO bookmarks (
       tweet_id, full_text, author_name, author_handle, author_avatar, tweet_url,
       media_urls, quoted_tweet, bookmarked_at, synced_at, remote_present,
@@ -158,6 +168,21 @@ function createDatabase() {
   `);
   return sqlite;
 }
+
+test('library revision changes across same-second taxonomy mutations', () => {
+  const sqlite = createDatabase();
+  const before = queryBookmarks(sqlite, { limit: 1 }).meta.library_revision;
+  sqlite.prepare('INSERT INTO bookmark_tags (bookmark_id, tag_id) VALUES (2, 2)').run();
+  sqlite
+    .prepare(
+      `INSERT INTO taxonomy_assignments
+       (bookmark_id, kind, target_id, source, updated_at) VALUES (2, 'tag', 2, 'manual', 1)`,
+    )
+    .run();
+  const after = queryBookmarks(sqlite, { limit: 1 }).meta.library_revision;
+  assert.notEqual(after, before);
+  sqlite.close();
+});
 
 test('full-text query returns structured metadata and excludes non-active rows by default', () => {
   const sqlite = createDatabase();

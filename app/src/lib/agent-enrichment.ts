@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3';
+import { createHash } from 'node:crypto';
 import { bookmarkContentHash, libraryRevision } from './bookmark-content';
 import { AgentContractError } from './agent-taxonomy';
 import { queryBookmarks, type BookmarkQueryInput } from './bookmark-query';
@@ -12,6 +13,31 @@ function object(value: unknown, field = 'body') {
     throw new AgentContractError(`${field} must be an object`);
   }
   return value as Record<string, unknown>;
+}
+
+function strictObject(value: unknown, field: string, allowed: readonly string[]) {
+  const result = object(value, field);
+  const allowedFields = new Set(allowed);
+  const unknown = Object.keys(result).find((key) => !allowedFields.has(key));
+  if (unknown) throw new AgentContractError(`Unknown ${field} field: ${unknown}`);
+  return result;
+}
+
+function requestFingerprint(value: unknown) {
+  return createHash('sha256').update(JSON.stringify(value)).digest('hex');
+}
+
+function recordedRequest(inputJson: string | null) {
+  if (!inputJson) return null;
+  try {
+    return JSON.parse(inputJson) as {
+      request_hash?: unknown;
+      item_count?: unknown;
+      bookmark_ids?: unknown;
+    };
+  } catch {
+    return null;
+  }
 }
 
 function text(value: unknown, field: string, maximum: number, required = false) {
@@ -50,7 +76,7 @@ function jsonValue(value: unknown, field: string, maximumBytes: number) {
 
 function embedding(value: unknown, field = 'embedding') {
   if (value === undefined || value === null) return null;
-  const input = object(value, field);
+  const input = strictObject(value, field, ['model', 'values']);
   const model = text(input.model, `${field}.model`, 150, true);
   if (!Array.isArray(input.values) || input.values.length === 0 || input.values.length > MAX_EMBEDDING_DIMENSIONS) {
     throw new AgentContractError(`${field}.values must contain 1 to ${MAX_EMBEDDING_DIMENSIONS} numbers`);
@@ -74,20 +100,15 @@ function bookmarkForHash(sqlite: Database.Database, bookmarkId: number) {
 }
 
 export function storeEnrichments(sqlite: Database.Database, rawBody: unknown) {
-  const body = object(rawBody);
+  const body = strictObject(rawBody, 'body', [
+    'idempotency_key',
+    'agent_id',
+    'model',
+    'prompt_version',
+    'dry_run',
+    'items',
+  ]);
   const runKey = text(body.idempotency_key, 'idempotency_key', 100, true);
-  const existing = sqlite
-    .prepare('SELECT id FROM agent_runs WHERE idempotency_key = ?')
-    .get(runKey) as { id: number } | undefined;
-  if (existing) {
-    return {
-      idempotent_replay: true,
-      run_id: existing.id,
-      items: sqlite
-        .prepare('SELECT * FROM bookmark_enrichments WHERE agent_run_id = ? ORDER BY bookmark_id')
-        .all(existing.id),
-    };
-  }
   const agentId = text(body.agent_id, 'agent_id', 100, true);
   const runModel = text(body.model, 'model', 150);
   const promptVersion = text(body.prompt_version, 'prompt_version', 100);
@@ -98,7 +119,18 @@ export function storeEnrichments(sqlite: Database.Database, rawBody: unknown) {
   }
 
   const normalized = body.items.map((value, index) => {
-    const item = object(value, `items[${index}]`);
+    const item = strictObject(value, `items[${index}]`, [
+      'bookmark_id',
+      'content_hash',
+      'status',
+      'summary',
+      'topics',
+      'entities',
+      'link_text',
+      'media_text',
+      'embedding',
+      'error_message',
+    ]);
     const bookmarkId = positiveId(item.bookmark_id, `items[${index}].bookmark_id`);
     const contentHash = text(item.content_hash, `items[${index}].content_hash`, 64, true)!;
     if (!/^[a-f0-9]{64}$/u.test(contentHash)) {
@@ -133,7 +165,38 @@ export function storeEnrichments(sqlite: Database.Database, rawBody: unknown) {
       error_message: text(item.error_message, `items[${index}].error_message`, 1_000),
     };
   });
+  const bookmarkIds = normalized.map((item) => item.bookmark_id);
+  if (new Set(bookmarkIds).size !== bookmarkIds.length) {
+    throw new AgentContractError('items may contain each bookmark_id only once');
+  }
+  const requestHash = requestFingerprint({
+    agent_id: agentId,
+    model: runModel,
+    prompt_version: promptVersion,
+    items: normalized,
+  });
   if (dryRun) return { dry_run: true, library_revision: libraryRevision(sqlite), items: normalized };
+
+  const existing = sqlite
+    .prepare('SELECT id, kind, input_json FROM agent_runs WHERE idempotency_key = ?')
+    .get(runKey) as { id: number; kind: string; input_json: string | null } | undefined;
+  if (existing) {
+    const recorded = recordedRequest(existing.input_json);
+    if (existing.kind !== 'enrichment' || recorded?.request_hash !== requestHash) {
+      throw new AgentContractError(
+        'idempotency_key was already used for a different agent request',
+        409,
+        { idempotency_key: runKey },
+      );
+    }
+    return {
+      dry_run: false,
+      idempotent_replay: true,
+      run_id: existing.id,
+      stored: Number(recorded.item_count ?? 0),
+      bookmark_ids: Array.isArray(recorded.bookmark_ids) ? recorded.bookmark_ids : [],
+    };
+  }
 
   return sqlite.transaction(() => {
     const timestamp = Math.floor(Date.now() / 1_000);
@@ -152,7 +215,11 @@ export function storeEnrichments(sqlite: Database.Database, rawBody: unknown) {
         runModel,
         promptVersion,
         libraryRevision(sqlite),
-        JSON.stringify({ item_count: normalized.length }),
+        JSON.stringify({
+          request_hash: requestHash,
+          item_count: normalized.length,
+          bookmark_ids: bookmarkIds,
+        }),
         timestamp,
         timestamp,
         timestamp,
@@ -205,7 +272,13 @@ export function storeEnrichments(sqlite: Database.Database, rawBody: unknown) {
         timestamp,
       );
     }
-    return { dry_run: false, idempotent_replay: false, run_id: run.id, stored: normalized.length };
+    return {
+      dry_run: false,
+      idempotent_replay: false,
+      run_id: run.id,
+      stored: normalized.length,
+      bookmark_ids: bookmarkIds,
+    };
   }).immediate();
 }
 
@@ -223,7 +296,15 @@ function cosine(left: number[], right: number[]) {
 }
 
 export function semanticSearch(sqlite: Database.Database, rawBody: unknown) {
-  const body = object(rawBody);
+  const body = strictObject(rawBody, 'body', [
+    'embedding_model',
+    'embedding',
+    'limit',
+    'min_score',
+    'lexical_q',
+    'lexical_weight',
+    'filters',
+  ]);
   const queryVector = embedding(
     { model: body.embedding_model, values: body.embedding },
     'query_embedding',
@@ -257,6 +338,13 @@ export function semanticSearch(sqlite: Database.Database, rawBody: unknown) {
       sort: 'bookmark_order',
     });
     revision ??= page.meta.library_revision;
+    if (page.meta.total > MAX_SEMANTIC_CANDIDATES) {
+      throw new AgentContractError(
+        `Semantic search matched ${page.meta.total} bookmarks, above the ${MAX_SEMANTIC_CANDIDATES}-candidate safety limit; narrow filters before retrying`,
+        422,
+        { eligible_total: page.meta.total, candidate_limit: MAX_SEMANTIC_CANDIDATES },
+      );
+    }
     eligible.push(...page.data.map((bookmark) => ({ id: bookmark.id, tweet_id: bookmark.tweet_id })));
     if (!page.meta.has_more) break;
     offset = page.meta.next_offset ?? offset + 100;

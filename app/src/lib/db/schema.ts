@@ -173,6 +173,12 @@ export const syncState = sqliteTable('sync_state', {
   updatedAt: integer('updated_at').notNull().default(sql`(unixepoch())`),
 });
 
+export const libraryRevisionState = sqliteTable('library_revision_state', {
+  id: integer('id').primaryKey(),
+  revision: integer('revision').notNull().default(1),
+  updatedAt: integer('updated_at').notNull().default(sql`(unixepoch())`),
+});
+
 export const xOAuthCredentials = sqliteTable('x_oauth_credentials', {
   id: integer('id').primaryKey(),
   userId: text('user_id').notNull(),

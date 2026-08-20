@@ -1,6 +1,11 @@
 export type SyncMode = 'auto' | 'incremental' | 'full';
 export type EffectiveSyncMode = Exclude<SyncMode, 'auto'>;
 
+export interface ReconciliationConfirmation {
+  fingerprint: string;
+  observed_count: number;
+}
+
 export interface XBookmarkRecord {
   tweetId: string;
   fullText: string;

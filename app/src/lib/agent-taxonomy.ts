@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3';
+import { createHash } from 'node:crypto';
 import { bookmarkContentHash, libraryRevision } from './bookmark-content';
 
 const MAX_BATCH = 200;
@@ -47,6 +48,28 @@ function object(value: unknown, field = 'body') {
     throw new AgentContractError(`${field} must be an object`);
   }
   return value as Record<string, unknown>;
+}
+
+function strictObject(value: unknown, field: string, allowed: readonly string[]) {
+  const result = object(value, field);
+  const allowedFields = new Set(allowed);
+  const unknown = Object.keys(result).find((key) => !allowedFields.has(key));
+  if (unknown) throw new AgentContractError(`Unknown ${field} field: ${unknown}`);
+  return result;
+}
+
+function requestFingerprint(value: unknown) {
+  return createHash('sha256').update(JSON.stringify(value)).digest('hex');
+}
+
+function recordedRequestHash(inputJson: string | null) {
+  if (!inputJson) return null;
+  try {
+    const parsed = JSON.parse(inputJson) as { request_hash?: unknown };
+    return typeof parsed.request_hash === 'string' ? parsed.request_hash : null;
+  } catch {
+    return null;
+  }
 }
 
 function text(value: unknown, field: string, maximum: number, required = true) {
@@ -144,7 +167,15 @@ function normalizeProposal(
   value: unknown,
   index: number,
 ) {
-  const input = object(value, `proposals[${index}]`) as ProposalInput;
+  const input = strictObject(value, `proposals[${index}]`, [
+    'bookmark_id',
+    'kind',
+    'operation',
+    'target_id',
+    'confidence',
+    'rationale',
+    'content_hash',
+  ]) as ProposalInput;
   const bookmarkId = id(input.bookmark_id, `proposals[${index}].bookmark_id`);
   if (typeof input.kind !== 'string' || !KINDS.has(input.kind)) {
     throw new AgentContractError(`proposals[${index}].kind must be tag or folder`);
@@ -197,14 +228,16 @@ function proposalRows(sqlite: Database.Database, runId: number) {
 }
 
 export function createTaxonomyProposals(sqlite: Database.Database, rawBody: unknown) {
-  const body = object(rawBody);
+  const body = strictObject(rawBody, 'body', [
+    'idempotency_key',
+    'agent_id',
+    'model',
+    'prompt_version',
+    'taxonomy_version',
+    'dry_run',
+    'proposals',
+  ]);
   const runKey = text(body.idempotency_key, 'idempotency_key', 100);
-  const existing = sqlite
-    .prepare('SELECT * FROM agent_runs WHERE idempotency_key = ?')
-    .get(runKey) as { id: number } | undefined;
-  if (existing) {
-    return { idempotent_replay: true, run_id: existing.id, proposals: proposalRows(sqlite, existing.id) };
-  }
   const agentId = text(body.agent_id, 'agent_id', 100);
   const model = text(body.model, 'model', 150, false);
   const promptVersion = text(body.prompt_version, 'prompt_version', 100, false);
@@ -216,12 +249,43 @@ export function createTaxonomyProposals(sqlite: Database.Database, rawBody: unkn
   const normalized = body.proposals.map((proposal, index) =>
     normalizeProposal(sqlite, proposal, index),
   );
+  const targets = new Set<string>();
+  for (const proposal of normalized) {
+    const key = `${proposal.bookmark_id}:${proposal.kind}:${proposal.target_id}`;
+    if (targets.has(key)) {
+      throw new AgentContractError(
+        `proposals contains more than one operation for bookmark ${proposal.bookmark_id} ${proposal.kind} ${proposal.target_id}`,
+      );
+    }
+    targets.add(key);
+  }
+  const requestHash = requestFingerprint({
+    agent_id: agentId,
+    model,
+    prompt_version: promptVersion,
+    taxonomy_version: taxonomyVersion,
+    proposals: normalized,
+  });
   if (dryRun) {
     return {
       dry_run: true,
       library_revision: libraryRevision(sqlite),
       proposals: normalized,
     };
+  }
+
+  const existing = sqlite
+    .prepare('SELECT id, kind, input_json FROM agent_runs WHERE idempotency_key = ?')
+    .get(runKey) as { id: number; kind: string; input_json: string | null } | undefined;
+  if (existing) {
+    if (existing.kind !== 'taxonomy' || recordedRequestHash(existing.input_json) !== requestHash) {
+      throw new AgentContractError(
+        'idempotency_key was already used for a different agent request',
+        409,
+        { idempotency_key: runKey },
+      );
+    }
+    return { idempotent_replay: true, run_id: existing.id, proposals: proposalRows(sqlite, existing.id) };
   }
 
   return sqlite.transaction(() => {
@@ -242,7 +306,7 @@ export function createTaxonomyProposals(sqlite: Database.Database, rawBody: unkn
         promptVersion,
         taxonomyVersion,
         libraryRevision(sqlite),
-        JSON.stringify({ proposal_count: normalized.length }),
+        JSON.stringify({ request_hash: requestHash, proposal_count: normalized.length }),
         normalized.length,
         timestamp,
         timestamp,
@@ -316,7 +380,7 @@ export function listTaxonomyProposals(sqlite: Database.Database, params: URLSear
 }
 
 export function reviewTaxonomyProposals(sqlite: Database.Database, rawBody: unknown) {
-  const body = object(rawBody);
+  const body = strictObject(rawBody, 'body', ['proposal_ids', 'status', 'note']);
   const proposalIds = idList(body.proposal_ids, 'proposal_ids');
   if (body.status !== 'approved' && body.status !== 'rejected') {
     throw new AgentContractError('status must be approved or rejected');
@@ -390,7 +454,7 @@ function deleteAssociation(sqlite: Database.Database, kind: Kind, bookmarkId: nu
 }
 
 export function applyTaxonomyProposals(sqlite: Database.Database, rawBody: unknown) {
-  const body = object(rawBody);
+  const body = strictObject(rawBody, 'body', ['proposal_ids', 'dry_run']);
   const proposalIds = idList(body.proposal_ids, 'proposal_ids');
   const dryRun = boolean(body.dry_run, true);
   const placeholders = proposalIds.map(() => '?').join(', ');
@@ -402,6 +466,17 @@ export function applyTaxonomyProposals(sqlite: Database.Database, rawBody: unkno
   if (unapproved.length > 0) {
     throw new AgentContractError('Only approved proposals can be applied', 409, unapproved.map((row) => row.id));
   }
+  const targets = new Set<string>();
+  for (const proposal of proposals) {
+    const key = `${proposal.bookmark_id}:${proposal.kind}:${proposal.target_id}`;
+    if (targets.has(key)) {
+      throw new AgentContractError(
+        'A single apply batch cannot contain overlapping proposals for the same bookmark and taxonomy target',
+        409,
+      );
+    }
+    targets.add(key);
+  }
   const plan = proposals.map((proposal) => planProposal(sqlite, proposal));
   const blocked = plan.filter((item) => item.blocked);
   if (dryRun || blocked.length > 0) {
@@ -410,7 +485,16 @@ export function applyTaxonomyProposals(sqlite: Database.Database, rawBody: unkno
 
   return sqlite.transaction(() => {
     const timestamp = Math.floor(Date.now() / 1_000);
-    for (const item of plan) {
+    const transactionPlan = proposals.map((proposal) => planProposal(sqlite, proposal));
+    const transactionBlocked = transactionPlan.filter((item) => item.blocked);
+    if (transactionBlocked.length > 0) {
+      throw new AgentContractError(
+        'Taxonomy state changed after the apply plan was created',
+        409,
+        transactionBlocked,
+      );
+    }
+    for (const item of transactionPlan) {
       const proposal = item.proposal;
       const bookmarkId = Number(proposal.bookmark_id);
       const targetId = Number(proposal.target_id);
@@ -499,7 +583,7 @@ export function applyTaxonomyProposals(sqlite: Database.Database, rawBody: unkno
 }
 
 export function rollbackTaxonomyEvents(sqlite: Database.Database, rawBody: unknown) {
-  const body = object(rawBody);
+  const body = strictObject(rawBody, 'body', ['event_ids', 'dry_run']);
   const eventIds = idList(body.event_ids, 'event_ids');
   const dryRun = boolean(body.dry_run, true);
   const placeholders = eventIds.map(() => '?').join(', ');
@@ -509,11 +593,58 @@ export function rollbackTaxonomyEvents(sqlite: Database.Database, rawBody: unkno
   if (events.length !== eventIds.length) throw new AgentContractError('One or more events were not found', 404);
   const alreadyReverted = events.filter((event) => event.reverted_at !== null);
   if (alreadyReverted.length > 0) throw new AgentContractError('One or more events were already reverted', 409);
-  if (dryRun) return { dry_run: true, can_rollback: true, events };
+  const currentState = (event: Record<string, unknown>) => ({
+    association: associationExists(
+      sqlite,
+      event.kind as Kind,
+      Number(event.bookmark_id),
+      Number(event.target_id),
+    ),
+    assignment:
+      assignment(
+        sqlite,
+        event.kind as Kind,
+        Number(event.bookmark_id),
+        Number(event.target_id),
+      ) ?? null,
+  });
+  const sameState = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
+  const previewState = new Map<string, unknown>();
+  const stale: { event_id: number; reason: string }[] = [];
+  for (const event of events) {
+    const key = `${event.bookmark_id}:${event.kind}:${event.target_id}`;
+    const current = previewState.has(key) ? previewState.get(key) : currentState(event);
+    const expected = JSON.parse(String(event.after_json));
+    if (!sameState(current, expected)) {
+      stale.push({ event_id: Number(event.id), reason: 'taxonomy_state_changed_after_apply' });
+      continue;
+    }
+    previewState.set(key, JSON.parse(String(event.before_json)));
+  }
+  if (dryRun) {
+    return { dry_run: true, can_rollback: stale.length === 0, blocked: stale, events };
+  }
+  if (stale.length > 0) {
+    throw new AgentContractError(
+      'Rollback is stale because taxonomy state changed after the selected event',
+      409,
+      stale,
+    );
+  }
 
   return sqlite.transaction(() => {
     const timestamp = Math.floor(Date.now() / 1_000);
+    const affectedRunIds = new Set<number>();
     for (const event of events) {
+      const expected = JSON.parse(String(event.after_json));
+      const current = currentState(event);
+      if (!sameState(current, expected)) {
+        throw new AgentContractError(
+          `Rollback event ${event.id} is stale because taxonomy state changed after apply`,
+          409,
+          { event_id: event.id },
+        );
+      }
       const before = JSON.parse(String(event.before_json)) as {
         association: boolean;
         assignment: AssignmentRow | null;
@@ -556,6 +687,16 @@ export function rollbackTaxonomyEvents(sqlite: Database.Database, rawBody: unkno
           )
           .run(timestamp, event.proposal_id);
       }
+      if (event.agent_run_id) affectedRunIds.add(Number(event.agent_run_id));
+    }
+    for (const runId of affectedRunIds) {
+      sqlite
+        .prepare(
+          `UPDATE agent_runs SET applied_count = (
+             SELECT COUNT(*) FROM taxonomy_proposals WHERE run_id = ? AND status = 'applied'
+           ), updated_at = ? WHERE id = ?`,
+        )
+        .run(runId, timestamp, runId);
     }
     return { dry_run: false, rolled_back: eventIds.length, event_ids: eventIds };
   }).immediate();

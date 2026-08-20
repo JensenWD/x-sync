@@ -45,6 +45,9 @@ function createDatabase() {
       id INTEGER PRIMARY KEY, last_successful_run_id INTEGER, last_synced_at INTEGER,
       last_full_synced_at INTEGER, last_error TEXT, updated_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
+    CREATE TABLE library_revision_state (
+      id INTEGER PRIMARY KEY, revision INTEGER NOT NULL, updated_at INTEGER NOT NULL
+    );
     CREATE TABLE agent_runs (
       id INTEGER PRIMARY KEY AUTOINCREMENT, idempotency_key TEXT NOT NULL UNIQUE,
       kind TEXT NOT NULL, status TEXT NOT NULL, agent_id TEXT NOT NULL, model TEXT,
@@ -111,6 +114,7 @@ function createDatabase() {
       (bookmark_id, kind, target_id, source, created_at, updated_at)
       VALUES (1, 'tag', 1, 'manual', 1, 1);
     INSERT INTO sync_state (id, last_successful_run_id) VALUES (1, 1);
+    INSERT INTO library_revision_state (id, revision, updated_at) VALUES (1, 1, 1);
   `);
   return sqlite;
 }
@@ -187,6 +191,130 @@ test('agent taxonomy changes require review, protect manual work, and roll back'
   sqlite.close();
 });
 
+test('taxonomy rollback refuses to erase newer manual work', () => {
+  const sqlite = createDatabase();
+  const hash = contentHash(sqlite, 1);
+  const created = createTaxonomyProposals(sqlite, {
+    idempotency_key: 'rollback-stale-run',
+    agent_id: 'test-agent',
+    proposals: [
+      {
+        bookmark_id: 1,
+        kind: 'tag',
+        operation: 'add',
+        target_id: 2,
+        confidence: 0.9,
+        content_hash: hash,
+      },
+    ],
+  });
+  const proposalId = Number((created.proposals as { id: number }[])[0].id);
+  reviewTaxonomyProposals(sqlite, { proposal_ids: [proposalId], status: 'approved' });
+  applyTaxonomyProposals(sqlite, { proposal_ids: [proposalId], dry_run: false });
+  const eventId = (sqlite.prepare('SELECT id FROM taxonomy_events').get() as { id: number }).id;
+  sqlite
+    .prepare(
+      `UPDATE taxonomy_assignments
+       SET source = 'manual', agent_run_id = NULL, confidence = NULL, rationale = NULL,
+           content_hash = NULL, updated_at = updated_at + 1
+       WHERE bookmark_id = 1 AND kind = 'tag' AND target_id = 2`,
+    )
+    .run();
+
+  const preview = rollbackTaxonomyEvents(sqlite, { event_ids: [eventId] });
+  assert.ok('can_rollback' in preview);
+  assert.equal(preview.can_rollback, false);
+  assert.throws(
+    () => rollbackTaxonomyEvents(sqlite, { event_ids: [eventId], dry_run: false }),
+    (error: unknown) =>
+      error instanceof Error && error.message.includes('taxonomy state changed'),
+  );
+  assert.equal(
+    (sqlite
+      .prepare("SELECT source FROM taxonomy_assignments WHERE bookmark_id = 1 AND kind = 'tag' AND target_id = 2")
+      .get() as { source: string }).source,
+    'manual',
+  );
+  sqlite.close();
+});
+
+test('agent writes reject unknown fields and conflicting idempotent replays', () => {
+  const sqlite = createDatabase();
+  const hash = contentHash(sqlite, 1);
+  const taxonomyPayload = {
+    idempotency_key: 'shared-agent-key',
+    agent_id: 'test-agent',
+    proposals: [
+      {
+        bookmark_id: 1,
+        kind: 'tag',
+        operation: 'add',
+        target_id: 2,
+        confidence: 0.9,
+        content_hash: hash,
+      },
+    ],
+  };
+  createTaxonomyProposals(sqlite, taxonomyPayload);
+  const exactReplay = createTaxonomyProposals(sqlite, taxonomyPayload);
+  assert.equal(exactReplay.idempotent_replay, true);
+  assert.throws(
+    () =>
+      createTaxonomyProposals(sqlite, {
+        ...taxonomyPayload,
+        proposals: [{ ...taxonomyPayload.proposals[0], confidence: 0.8 }],
+      }),
+    (error: unknown) => error instanceof Error && error.message.includes('different agent request'),
+  );
+  assert.throws(
+    () =>
+      storeEnrichments(sqlite, {
+        idempotency_key: 'shared-agent-key',
+        agent_id: 'test-agent',
+        dry_run: false,
+        items: [{ bookmark_id: 1, content_hash: hash, status: 'complete' }],
+      }),
+    (error: unknown) => error instanceof Error && error.message.includes('different agent request'),
+  );
+  assert.throws(
+    () => semanticSearch(sqlite, { embedding_model: 'test', embedding: [1], min_socre: 0.5 }),
+    (error: unknown) => error instanceof Error && error.message.includes('min_socre'),
+  );
+  assert.throws(
+    () => createTaxonomyProposals(sqlite, { ...taxonomyPayload, unexpected: true }),
+    (error: unknown) => error instanceof Error && error.message.includes('unexpected'),
+  );
+  sqlite.close();
+});
+
+test('apply rejects overlapping proposals created by separate runs', () => {
+  const sqlite = createDatabase();
+  const hash = contentHash(sqlite, 1);
+  const proposalIds = ['overlap-a', 'overlap-b'].map((key) => {
+    const created = createTaxonomyProposals(sqlite, {
+      idempotency_key: key,
+      agent_id: 'test-agent',
+      proposals: [
+        {
+          bookmark_id: 1,
+          kind: 'tag',
+          operation: 'add',
+          target_id: 2,
+          confidence: 0.9,
+          content_hash: hash,
+        },
+      ],
+    });
+    return Number((created.proposals as { id: number }[])[0].id);
+  });
+  reviewTaxonomyProposals(sqlite, { proposal_ids: proposalIds, status: 'approved' });
+  assert.throws(
+    () => applyTaxonomyProposals(sqlite, { proposal_ids: proposalIds, dry_run: false }),
+    (error: unknown) => error instanceof Error && error.message.includes('overlapping proposals'),
+  );
+  sqlite.close();
+});
+
 test('enrichments are optimistic, dry-run by default, and power semantic retrieval', () => {
   const sqlite = createDatabase();
   const hash = contentHash(sqlite, 1);
@@ -211,7 +339,18 @@ test('enrichments are optimistic, dry-run by default, and power semantic retriev
     (sqlite.prepare('SELECT COUNT(*) AS count FROM bookmark_enrichments').get() as { count: number }).count,
     0,
   );
-  storeEnrichments(sqlite, { ...payload, dry_run: false });
+  const stored = storeEnrichments(sqlite, { ...payload, dry_run: false });
+  assert.equal(stored.idempotent_replay, false);
+  storeEnrichments(sqlite, {
+    ...payload,
+    idempotency_key: 'enrichment-run-2',
+    items: [{ ...payload.items[0], summary: 'A newer summary.' }],
+    dry_run: false,
+  });
+  const replay = storeEnrichments(sqlite, { ...payload, dry_run: false });
+  assert.equal(replay.idempotent_replay, true);
+  assert.equal(replay.stored, 1);
+  assert.deepEqual(replay.bookmark_ids, [1]);
   const result = semanticSearch(sqlite, {
     embedding_model: 'test-embedding',
     embedding: [0.9, 0.1],
@@ -221,5 +360,22 @@ test('enrichments are optimistic, dry-run by default, and power semantic retriev
   assert.equal(result.data[0].tweet_id, '100');
   assert.ok(result.data[0].semantic_score > 0.9);
   assert.equal(result.data[0].lexical_match, true);
+  sqlite.close();
+});
+
+test('semantic search fails closed when the eligible set exceeds its in-memory cap', () => {
+  const sqlite = createDatabase();
+  const insert = sqlite.prepare(
+    `INSERT INTO bookmarks (tweet_id, full_text, author_name, author_handle, tweet_url)
+     VALUES (?, '', '', '', '')`,
+  );
+  sqlite.transaction(() => {
+    for (let index = 0; index < 4_999; index += 1) insert.run(`bulk-${index}`);
+  }).immediate();
+  assert.throws(
+    () => semanticSearch(sqlite, { embedding_model: 'test-embedding', embedding: [1, 0] }),
+    (error: unknown) =>
+      error instanceof Error && error.message.includes('above the 5000-candidate safety limit'),
+  );
   sqlite.close();
 });

@@ -10,7 +10,12 @@ import {
   SyncReconciliationBlockedError,
   SyncRunStateError,
 } from './store';
-import type { BrowserSyncPageResult, ParsedTimelinePage, SyncMode } from './types';
+import type {
+  BrowserSyncPageResult,
+  ParsedTimelinePage,
+  ReconciliationConfirmation,
+  SyncMode,
+} from './types';
 
 const MAX_PAGES = 2_000;
 const MAX_EMPTY_PAGES_WITH_CURSOR = 3;
@@ -20,6 +25,7 @@ export class BrowserSyncError extends Error {
     public readonly code: string,
     message: string,
     public readonly httpStatus = 502,
+    public readonly details?: unknown,
   ) {
     super(message);
     this.name = 'BrowserSyncError';
@@ -104,6 +110,7 @@ export function ingestParsedPage(
   runId: number,
   requestCursor: string | null,
   page: ParsedTimelinePage,
+  reconciliationConfirmation: ReconciliationConfirmation | null = null,
 ): BrowserSyncPageResult {
   const store = new BookmarkSyncStore(rawDb);
   const currentRun = store.getRun(runId);
@@ -140,11 +147,24 @@ export function ingestParsedPage(
     try {
       return {
         status: 'success',
-        run: store.completeRun(runId, 'end_of_timeline', now()),
+        run: store.completeRun(
+          runId,
+          'end_of_timeline',
+          now(),
+          reconciliationConfirmation,
+        ),
       };
     } catch (error) {
       if (error instanceof SyncReconciliationBlockedError) {
-        throw new BrowserSyncError('x_full_sync_anomaly', error.message, 409);
+        throw new BrowserSyncError('x_full_sync_anomaly', error.message, 409, {
+          baseline_count: error.baselineCount,
+          observed_count: error.observedCount,
+          archive_count: Math.max(0, error.baselineCount - error.observedCount),
+          reconciliation_confirmation: {
+            fingerprint: error.fingerprint,
+            observed_count: error.observedCount,
+          },
+        });
       }
       throw error;
     }

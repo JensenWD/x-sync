@@ -30,24 +30,8 @@ export function bookmarkContentHash(bookmark: BookmarkContentIdentity) {
 
 export function libraryRevision(sqlite: import('better-sqlite3').Database) {
   const row = sqlite
-    .prepare(
-      `SELECT
-         COALESCE((SELECT last_successful_run_id FROM sync_state WHERE id = 1), 0) AS sync_run,
-         COALESCE((SELECT MAX(updated_at) FROM bookmarks), 0) AS bookmark_update,
-         MAX(
-           COALESCE((SELECT MAX(applied_at) FROM taxonomy_events), 0),
-           COALESCE((SELECT MAX(reverted_at) FROM taxonomy_events), 0),
-           COALESCE((SELECT MAX(updated_at) FROM taxonomy_assignments), 0),
-           COALESCE((SELECT MAX(updated_at) FROM folders), 0),
-           COALESCE((SELECT MAX(created_at) FROM tags), 0)
-         ) AS taxonomy_update,
-         COALESCE((SELECT MAX(updated_at) FROM bookmark_enrichments), 0) AS enrichment_update`,
-    )
-    .get() as {
-      sync_run: number;
-      bookmark_update: number;
-      taxonomy_update: number;
-      enrichment_update: number;
-    };
-  return `s${row.sync_run}-b${row.bookmark_update}-t${row.taxonomy_update}-e${row.enrichment_update}`;
+    .prepare('SELECT revision FROM library_revision_state WHERE id = 1')
+    .get() as { revision: number } | undefined;
+  if (!row) throw new Error('Library revision state is missing; run database migrations');
+  return `r${row.revision}`;
 }

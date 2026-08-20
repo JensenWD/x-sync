@@ -252,7 +252,7 @@ test('seen rows survive store instances until a full run completes', () => {
   sqlite.close();
 });
 
-test('a suspicious full-sync drop is quarantined and requires the same result twice', () => {
+test('a suspicious full-sync drop requires an explicit matching confirmation', () => {
   const sqlite = createDatabase();
   const insert = sqlite.prepare('INSERT INTO bookmarks (tweet_id) VALUES (?)');
   for (let index = 0; index < 100; index += 1) insert.run(`old-${index}`);
@@ -270,11 +270,28 @@ test('a suspicious full-sync drop is quarantined and requires the same result tw
     (sqlite.prepare('SELECT COUNT(*) AS count FROM bookmarks WHERE remote_present = 1').get() as { count: number }).count,
     100,
   );
+  const fingerprint = firstStore.getRun(firstRun.id).reconciliation_fingerprint;
+  assert.ok(fingerprint);
 
   const secondStore = new BookmarkSyncStore(sqlite);
   const secondRun = secondStore.startRun('full', 1_100);
   secondStore.recordBrowserPage(secondRun.id, null, page(observed, null), 1_101);
-  const confirmed = secondStore.completeRun(secondRun.id, 'end_of_timeline', 1_102);
+  assert.throws(
+    () => secondStore.completeRun(secondRun.id, 'end_of_timeline', 1_102),
+    SyncReconciliationBlockedError,
+  );
+  assert.equal(
+    (sqlite.prepare('SELECT COUNT(*) AS count FROM bookmarks WHERE remote_present = 1').get() as { count: number }).count,
+    100,
+  );
+
+  const thirdStore = new BookmarkSyncStore(sqlite);
+  const thirdRun = thirdStore.startRun('full', 1_200);
+  thirdStore.recordBrowserPage(thirdRun.id, null, page(observed, null), 1_201);
+  const confirmed = thirdStore.completeRun(thirdRun.id, 'end_of_timeline', 1_202, {
+    fingerprint,
+    observed_count: observed.length,
+  });
   assert.equal(confirmed.remote_removed, 90);
   assert.equal(confirmed.total_bookmarks, 10);
   sqlite.close();

@@ -12,7 +12,12 @@ import {
 import { Button, buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { useOfficialSync, useSyncStatus, useXConnection } from '@/hooks/use-sync';
+import {
+  SyncRequestError,
+  useOfficialSync,
+  useSyncStatus,
+  useXConnection,
+} from '@/hooks/use-sync';
 import { useSearchParams } from 'next/navigation';
 
 interface SyncDialogProps {
@@ -30,6 +35,10 @@ export function SyncDialog({ open, onOpenChange }: SyncDialogProps) {
   const syncing = sync.isPending || Boolean(syncStatus.data?.in_progress);
   const activeRun = syncStatus.data?.active_run;
   const callbackError = searchParams.get('x_error');
+  const reconciliationError =
+    sync.error instanceof SyncRequestError && sync.error.code === 'x_full_sync_anomaly'
+      ? sync.error.details
+      : null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -82,10 +91,39 @@ export function SyncDialog({ open, onOpenChange }: SyncDialogProps) {
               </span>
             </div>
 
-            {sync.error && (
+            {sync.error && !reconciliationError && (
               <Alert variant="destructive">
                 <AlertCircle className="h-4 w-4" />
                 <AlertDescription>{sync.error.message}</AlertDescription>
+              </Alert>
+            )}
+            {reconciliationError && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription className="space-y-3">
+                  <p>
+                    X returned only {reconciliationError.observed_count} of the previous{' '}
+                    {reconciliationError.baseline_count} bookmarks. Nothing was archived.
+                  </p>
+                  <p>
+                    Confirm only if you want to archive the {reconciliationError.archive_count}{' '}
+                    bookmarks missing from this repeated X result.
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    disabled={syncing}
+                    onClick={() =>
+                      sync.mutate({
+                        mode: 'full',
+                        reconciliation_confirmation:
+                          reconciliationError.reconciliation_confirmation,
+                      })
+                    }
+                  >
+                    Confirm reconciliation
+                  </Button>
+                </AlertDescription>
               </Alert>
             )}
             {sync.data && (
@@ -112,7 +150,7 @@ export function SyncDialog({ open, onOpenChange }: SyncDialogProps) {
               disabled={syncing}
               onClick={() => {
                 setConfirmFullSync(false);
-                sync.mutate('incremental');
+                sync.mutate({ mode: 'incremental' });
               }}
             >
               {syncing && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -135,7 +173,7 @@ export function SyncDialog({ open, onOpenChange }: SyncDialogProps) {
                       disabled={syncing}
                       onClick={() => {
                         setConfirmFullSync(false);
-                        sync.mutate('full');
+                        sync.mutate({ mode: 'full' });
                       }}
                     >
                       Resync everything

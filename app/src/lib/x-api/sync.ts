@@ -5,7 +5,7 @@ import {
   ingestParsedPage,
   startBrowserSync,
 } from '@/lib/x-sync/service';
-import type { SyncMode } from '@/lib/x-sync/types';
+import type { ReconciliationConfirmation, SyncMode } from '@/lib/x-sync/types';
 import { bookmarkRequestUrl } from './bookmark-request';
 import { getOfficialApiError, parseOfficialBookmarkPage } from './parser';
 import {
@@ -71,7 +71,10 @@ async function fetchPage(userId: string, cursor: string | null, accessToken: str
   return page;
 }
 
-export async function syncOfficialBookmarks(requestedMode: SyncMode) {
+export async function syncOfficialBookmarks(
+  requestedMode: SyncMode,
+  reconciliationConfirmation: ReconciliationConfirmation | null = null,
+) {
   const userId = getConnectedXUserId();
   let accessToken = await getValidXAccessToken();
   const run = startBrowserSync(requestedMode);
@@ -89,7 +92,7 @@ export async function syncOfficialBookmarks(requestedMode: SyncMode) {
         page = await fetchPage(userId, cursor, accessToken);
       }
 
-      const result = ingestParsedPage(run.id, cursor, page);
+      const result = ingestParsedPage(run.id, cursor, page, reconciliationConfirmation);
       if (result.status === 'success') return result.run;
       cursor = result.cursor;
     }

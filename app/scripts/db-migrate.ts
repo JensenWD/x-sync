@@ -42,6 +42,34 @@ async function main() {
     if (bookmarkCount !== ftsCount) {
       throw new Error(`FTS verification failed: ${ftsCount} indexed rows for ${bookmarkCount} bookmarks`);
     }
+    const enrichmentCount = Number(
+      (sqlite.prepare('SELECT COUNT(*) AS count FROM bookmark_enrichments').get() as { count: number }).count,
+    );
+    const enrichmentFtsCount = Number(
+      (sqlite.prepare('SELECT COUNT(*) AS count FROM bookmark_enrichments_fts').get() as { count: number }).count,
+    );
+    if (enrichmentCount !== enrichmentFtsCount) {
+      throw new Error(
+        `Enrichment FTS verification failed: ${enrichmentFtsCount} indexed rows for ${enrichmentCount} enrichments`,
+      );
+    }
+    const expectedTriggers = [
+      'bookmarks_ai',
+      'bookmarks_ad',
+      'bookmarks_au',
+      'bookmark_enrichments_ai',
+      'bookmark_enrichments_ad',
+      'bookmark_enrichments_au',
+    ];
+    const installedTriggers = new Set(
+      (sqlite
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'trigger'")
+        .all() as { name: string }[]).map((row) => row.name),
+    );
+    const missingTriggers = expectedTriggers.filter((name) => !installedTriggers.has(name));
+    if (missingTriggers.length > 0) {
+      throw new Error(`FTS trigger verification failed; missing: ${missingTriggers.join(', ')}`);
+    }
     console.log(`Migration complete. Verified backup: ${backupPath}`);
   } finally {
     sqlite.close();

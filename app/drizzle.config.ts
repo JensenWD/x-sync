@@ -4,5 +4,5 @@ export default defineConfig({
   schema: './src/lib/db/schema.ts',
   out: './drizzle',
   dialect: 'sqlite',
-  dbCredentials: { url: './data/bookmarks.db' },
+  dbCredentials: { url: process.env.X_SYNC_DB_PATH ?? './data/bookmarks.db' },
 });

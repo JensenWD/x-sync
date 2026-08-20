@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import { formatDistanceToNow } from 'date-fns';
-import { ExternalLinkIcon, Trash2Icon } from 'lucide-react';
+import { ChevronDownIcon, ChevronUpIcon, ExternalLinkIcon, Trash2Icon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { FolderDropdown } from '@/components/folder/folder-dropdown';
@@ -60,8 +60,9 @@ interface BookmarkCardProps {
 
 export function BookmarkCard({ bookmark }: BookmarkCardProps) {
   const [expanded, setExpanded] = useState(false);
-  const [hovered, setHovered] = useState(false);
+  const [textCanExpand, setTextCanExpand] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const textRef = useRef<HTMLParagraphElement>(null);
   const deleteBookmark = useDeleteBookmark();
 
   const relativeTime = bookmark.bookmarked_at
@@ -71,14 +72,25 @@ export function BookmarkCard({ bookmark }: BookmarkCardProps) {
   const mediaToShow = bookmark.media_urls?.slice(0, 2) ?? [];
   const extraMedia = (bookmark.media_urls?.length ?? 0) - 2;
 
+  useEffect(() => {
+    const text = textRef.current;
+    if (!text || expanded) return;
+
+    const measure = () => setTextCanExpand(text.scrollHeight > text.clientHeight + 1);
+    measure();
+
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(text);
+    return () => observer.disconnect();
+  }, [bookmark.full_text, expanded]);
+
   return (
     <article
       className={cn(
-        'group relative bg-card border rounded-lg p-4 cursor-pointer transition-all duration-150',
+        'group relative flex h-full flex-col bg-card border rounded-lg p-4 cursor-pointer transition-all duration-150',
         'border-[var(--card-border)] hover:border-[var(--card-border-hover)] hover:shadow-lg',
       )}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
       onClick={() => setExpanded((v) => !v)}
     >
       {/* Header row */}
@@ -104,14 +116,38 @@ export function BookmarkCard({ bookmark }: BookmarkCardProps) {
       </div>
 
       {/* Tweet text */}
-      <p
-        className={cn(
-          'text-sm text-text-primary whitespace-pre-wrap mb-3 leading-relaxed',
-          !expanded && 'line-clamp-3',
+      <div className="mb-3">
+        <p
+          ref={textRef}
+          className={cn(
+            'text-sm text-text-primary whitespace-pre-wrap leading-relaxed',
+            !expanded && 'line-clamp-3',
+          )}
+        >
+          {bookmark.full_text}
+        </p>
+        {textCanExpand && (
+          <button
+            type="button"
+            aria-expanded={expanded}
+            className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-[#1d9bf0] hover:text-[#55acee]"
+            onClick={(event) => {
+              event.stopPropagation();
+              setExpanded((value) => !value);
+            }}
+          >
+            {expanded ? (
+              <>
+                Collapse post <ChevronUpIcon className="h-3 w-3" />
+              </>
+            ) : (
+              <>
+                Expand post <ChevronDownIcon className="h-3 w-3" />
+              </>
+            )}
+          </button>
         )}
-      >
-        {bookmark.full_text}
-      </p>
+      </div>
 
       {/* Quoted tweet */}
       {bookmark.quoted_tweet && (
@@ -124,7 +160,12 @@ export function BookmarkCard({ bookmark }: BookmarkCardProps) {
               @{bookmark.quoted_tweet.author_handle}
             </span>
           </div>
-          <p className="text-xs text-text-secondary line-clamp-2 leading-relaxed">
+          <p
+            className={cn(
+              'text-xs text-text-secondary leading-relaxed',
+              !expanded && 'line-clamp-2',
+            )}
+          >
             {bookmark.quoted_tweet.full_text}
           </p>
         </div>
@@ -132,24 +173,35 @@ export function BookmarkCard({ bookmark }: BookmarkCardProps) {
 
       {/* Media */}
       {mediaToShow.length > 0 && (
-        <div className="flex gap-1.5 mb-3">
+        <div
+          className={cn(
+            '-mx-4 mb-3 grid w-[calc(100%+2rem)] overflow-hidden border-y border-[var(--card-border)] bg-muted',
+            mediaToShow.length === 1 ? 'grid-cols-1' : 'grid-cols-2 gap-px',
+          )}
+        >
           {mediaToShow.map((url, i) => (
-            <div key={i} className="relative w-24 h-16 rounded-md overflow-hidden bg-muted">
+            <div
+              key={i}
+              className={cn(
+                'relative w-full overflow-hidden bg-muted',
+                mediaToShow.length === 1 ? 'aspect-video' : 'aspect-square',
+              )}
+            >
               <Image
                 src={url}
-                alt="media"
+                alt="Post media"
                 fill
                 className="object-cover"
                 unoptimized
-                sizes="96px"
+                sizes="(min-width: 1280px) 50vw, 100vw"
               />
+              {extraMedia > 0 && i === mediaToShow.length - 1 && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/55">
+                  <span className="text-sm font-semibold text-white">+{extraMedia}</span>
+                </div>
+              )}
             </div>
           ))}
-          {extraMedia > 0 && (
-            <div className="w-24 h-16 rounded-md bg-secondary flex items-center justify-center">
-              <span className="text-xs text-text-secondary font-mono">+{extraMedia}</span>
-            </div>
-          )}
         </div>
       )}
 
@@ -178,12 +230,9 @@ export function BookmarkCard({ bookmark }: BookmarkCardProps) {
         </div>
       )}
 
-      {/* Hover action row */}
+      {/* Persistent action row */}
       <div
-        className={cn(
-          'flex items-center gap-1 mt-2 transition-opacity duration-150',
-          hovered ? 'opacity-100' : 'opacity-0',
-        )}
+        className="mt-auto flex items-center gap-1 border-t border-[var(--card-border)] pt-2"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Open on X — uses render prop to make TooltipTrigger render as <a> */}

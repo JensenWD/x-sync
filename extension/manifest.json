@@ -1,17 +1,28 @@
 {
   "manifest_version": 3,
   "name": "X Bookmark Sync",
-  "version": "1.0",
-  "description": "Sync your X bookmarks to your local dashboard",
-  "permissions": ["cookies", "storage"],
+  "version": "1.2.0",
+  "description": "Sync your X bookmarks from your logged-in browser to your private dashboard",
+  "minimum_chrome_version": "111",
+  "permissions": ["scripting"],
   "host_permissions": [
     "https://x.com/*",
     "https://twitter.com/*",
-    "http://localhost:3000/*"
+    "https://agentmac.tailf5c3be.ts.net:3000/*",
+    "http://localhost:3000/*",
+    "http://127.0.0.1:3000/*"
   ],
   "background": {
     "service_worker": "background.js"
   },
+  "content_scripts": [
+    {
+      "matches": ["https://x.com/*", "https://twitter.com/*"],
+      "js": ["page-capture.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    }
+  ],
   "action": {
     "default_popup": "popup.html",
     "default_title": "X Bookmark Sync"

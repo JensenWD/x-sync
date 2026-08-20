@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { formatDistanceToNow } from 'date-fns';
-import { BookmarkIcon, FolderIcon, TagIcon, RefreshCw, PlusIcon, AlertCircle, Loader2 } from 'lucide-react';
+import { BookmarkIcon, RefreshCw, PlusIcon, AlertCircle, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -19,11 +19,13 @@ const FOLDER_COLORS = [
   '#ff7a00', '#7856ff', '#fa3939', '#71767b',
 ];
 
-export function Sidebar() {
+export function Sidebar({ onSelect }: { onSelect?: () => void }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [syncDialogOpen, setSyncDialogOpen] = useState(false);
+  const [syncDialogOpen, setSyncDialogOpen] = useState(
+    () => searchParams.has('x_connected') || searchParams.has('x_error'),
+  );
   const [newFolderName, setNewFolderName] = useState('');
   const [newFolderColor, setNewFolderColor] = useState(FOLDER_COLORS[0]);
   const [addingFolder, setAddingFolder] = useState(false);
@@ -44,10 +46,12 @@ export function Sidebar() {
       else next.set(k, v);
     }
     router.push(`${pathname}?${next.toString()}`);
+    onSelect?.();
   }
 
   function handleAllBookmarks() {
     router.push(pathname);
+    onSelect?.();
   }
 
   function handleFolder(id: number) {

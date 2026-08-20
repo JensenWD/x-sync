@@ -1,36 +1,67 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# X Bookmarks
 
-## Getting Started
+Private X bookmark dashboard backed by SQLite and synced through X OAuth and the official Bookmarks API.
 
-First, run the development server:
+## Access
+
+- Local service: `http://127.0.0.1:3000`
+- Tailnet: `https://agentmac.tailf5c3be.ts.net:3000`
+- LaunchAgent: `com.johnny.x-sync`
+
+The Next.js server listens on loopback only. Tailscale Serve owns Tailnet HTTPS exposure.
+
+## Agent bookmark query API
+
+Agents can search the local bookmark library without calling X or reading SQLite directly. The API is read-only and returns bookmark text, author data, media, quoted tweets, folders, tags, tweet timestamps, local import timestamps, sync state, and pagination metadata.
+
+- Query endpoint: `GET` or `POST /api/agent/bookmarks`
+- Machine-readable contract and current folder/tag facets: `GET /api/agent/bookmarks/schema`
+- Default scope: active bookmarks only
+- Maximum page size: 100
+
+Simple GET query:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+curl -sG 'http://127.0.0.1:3000/api/agent/bookmarks' \
+  --data-urlencode 'q=AI agents' \
+  --data-urlencode 'tag=research' \
+  --data-urlencode 'limit=20'
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Structured POST query:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+curl -s 'http://127.0.0.1:3000/api/agent/bookmarks' \
+  -H 'Content-Type: application/json' \
+  --data '{"folder_names":["Work"],"tags_all":["ai","coding"],"has_media":true}'
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+GET supports `q`, `match`, repeated or comma-separated `author`, `folder_id`, `folder`, `tag`, `tag_all`, and `tweet_id` parameters, plus `has_media`, `has_quote`, `tweet_created_after`, `tweet_created_before`, `status`, `sort`, `limit`, and `offset`. POST uses the equivalent plural JSON fields documented by the schema endpoint.
 
-## Learn More
+## Sync behavior
 
-To learn more about Next.js, take a look at the following resources:
+- `auto`: full sync on an empty database or when the last full reconciliation is at least seven days old; incremental otherwise.
+- `incremental`: scans from the newest page until it reaches two completely known pages.
+- `full`: scans to the end, then archives local rows no longer present on X.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+The official API importer requests the reliable 50-item page size and records each page in a durable SQLite run. Full reconciliation never hard-deletes bookmarks, tags, or folder associations, and an interrupted run never archives unseen rows. Local removal writes a hide tombstone that later syncs do not clear. The former browser extension is parked as a fallback and is not part of the normal workflow.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Safe database commands
 
-## Deploy on Vercel
+```bash
+npm run db:generate
+npm run db:migrate
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+`db:migrate` refuses to create a missing database, verifies integrity, makes a timestamped online backup under `data/backups/`, applies migrations, and verifies integrity again. `db:setup` also refuses to create a missing database. Use `npm run db:init` only for an intentional brand-new database.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Verification
+
+```bash
+npm test
+npm run lint
+npx tsc --noEmit --incremental false
+npm run build
+```
+
+The parked Chrome extension fallback lives in `../extension`; normal sync uses the in-app X OAuth/API flow.

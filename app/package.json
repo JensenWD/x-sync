@@ -7,9 +7,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "tsx --test tests/*.test.ts ../extension/*.test.cjs",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
+    "db:migrate": "tsx scripts/db-migrate.ts",
     "db:setup": "npx tsx scripts/db-setup.ts",
+    "db:init": "npx tsx scripts/db-setup.ts --create",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {

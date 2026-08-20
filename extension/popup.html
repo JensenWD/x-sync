@@ -59,6 +59,20 @@
       #sync-btn:hover:not(:disabled) { background: #1a8cd8; }
       #sync-btn:disabled { opacity: 0.65; cursor: not-allowed; }
 
+      .sync-mode {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        margin: 10px 1px 0;
+        color: #a3a3a3;
+        font-size: 11px;
+        line-height: 1.35;
+        cursor: pointer;
+      }
+
+      .sync-mode input { margin-top: 2px; accent-color: #1d9bf0; }
+      .sync-mode strong { display: block; color: #d6d6d6; font-size: 12px; }
+
       #btn-text {
         display: flex;
         align-items: center;
@@ -131,7 +145,7 @@
       </div>
       <div>
         <div class="title">X Bookmark Sync</div>
-        <div class="subtitle">Syncs to your local dashboard</div>
+        <div class="subtitle">X stays in Chrome; bookmarks go to Tailnet</div>
       </div>
     </div>
 
@@ -139,13 +153,19 @@
       <span id="btn-text">Sync Bookmarks</span>
     </button>
 
+    <label class="sync-mode">
+      <input id="full-sync" type="checkbox" />
+      <span><strong>Full reconcile</strong>Scroll through everything and archive bookmarks removed from X.</span>
+    </label>
+
     <div id="status" class="idle"></div>
 
     <div class="meta">
-      <span id="last-synced"></span>
-      <a href="http://localhost:3000" target="_blank" class="open-link">Open dashboard ↗</a>
+      <span id="last-synced">Checking status…</span>
+      <a href="https://agentmac.tailf5c3be.ts.net:3000" target="_blank" class="open-link">Open dashboard ↗</a>
     </div>
 
+    <script src="sync-protocol.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>

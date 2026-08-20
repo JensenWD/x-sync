@@ -39,17 +39,19 @@ const BASE_SELECT = `
     b.id, b.tweet_id, b.full_text, b.author_name, b.author_handle,
     b.author_avatar, b.tweet_url, b.media_urls, b.quoted_tweet, b.bookmarked_at,
     b.created_at,
-    COALESCE(json_group_array(
-      CASE WHEN f.id IS NOT NULL THEN json_object('id', f.id, 'name', f.name, 'color', f.color) END
-    ) FILTER (WHERE f.id IS NOT NULL), '[]') AS folders_json,
-    COALESCE(json_group_array(
-      CASE WHEN t.id IS NOT NULL THEN json_object('id', t.id, 'name', t.name) END
-    ) FILTER (WHERE t.id IS NOT NULL), '[]') AS tags_json
+    COALESCE((
+      SELECT json_group_array(json_object('id', f.id, 'name', f.name, 'color', f.color))
+      FROM bookmark_folders bf
+      JOIN folders f ON f.id = bf.folder_id
+      WHERE bf.bookmark_id = b.id
+    ), '[]') AS folders_json,
+    COALESCE((
+      SELECT json_group_array(json_object('id', t.id, 'name', t.name))
+      FROM bookmark_tags bt
+      JOIN tags t ON t.id = bt.tag_id
+      WHERE bt.bookmark_id = b.id
+    ), '[]') AS tags_json
   FROM bookmarks b
-  LEFT JOIN bookmark_folders bf ON bf.bookmark_id = b.id
-  LEFT JOIN folders f ON f.id = bf.folder_id
-  LEFT JOIN bookmark_tags bt ON bt.bookmark_id = b.id
-  LEFT JOIN tags t ON t.id = bt.tag_id
 `;
 
 export async function GET(req: NextRequest) {
@@ -62,7 +64,7 @@ export async function GET(req: NextRequest) {
   const page = Math.max(parseInt(searchParams.get('page') || '1', 10), 1);
   const offset = (page - 1) * perPage;
 
-  const conditions: string[] = [];
+  const conditions: string[] = ['b.remote_present = 1', 'b.hidden_at IS NULL'];
   const params: (string | number)[] = [];
 
   if (search) {
@@ -100,8 +102,10 @@ export async function GET(req: NextRequest) {
   const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
   const sortMap: Record<string, string> = {
-    bookmarked_at_desc: 'b.bookmarked_at DESC NULLS LAST, b.id DESC',
-    bookmarked_at_asc: 'b.bookmarked_at ASC NULLS LAST, b.id ASC',
+    bookmarked_at_desc:
+      'b.remote_order_run_id DESC NULLS LAST, b.remote_order_position ASC NULLS LAST, b.id DESC',
+    bookmarked_at_asc:
+      'b.remote_order_run_id ASC NULLS FIRST, b.remote_order_position DESC NULLS LAST, b.id ASC',
     author_asc: 'b.author_handle ASC, b.id DESC',
   };
   const orderBy = sortMap[sort] || sortMap.bookmarked_at_desc;

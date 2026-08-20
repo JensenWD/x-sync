@@ -1,32 +1,120 @@
-import { syncBookmarks, getSyncStatus, upsertCredentials } from '@/lib/x-bookmark-service';
+import {
+  BrowserSyncError,
+  failBrowserSync,
+  ingestBrowserPage,
+  startBrowserSync,
+  SyncAlreadyRunningError,
+  SyncRunNotFoundError,
+  type SyncMode,
+} from '@/lib/x-bookmark-service';
+import { syncOfficialBookmarks } from '@/lib/x-api/sync';
 import { NextRequest } from 'next/server';
 
 export const maxDuration = 300;
 
+const MODES = new Set<SyncMode>(['auto', 'incremental', 'full']);
+const MAX_PAGE_BODY_BYTES = 16 * 1024 * 1024;
+
+function json(data: unknown, status = 200) {
+  return Response.json(data, {
+    status,
+    headers: { 'Cache-Control': 'no-store' },
+  });
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isRunId(value: unknown): value is number {
+  return Number.isSafeInteger(value) && Number(value) > 0;
+}
+
+function isCursor(value: unknown): value is string | null {
+  return value === null || (typeof value === 'string' && value.length > 0 && value.length <= 10_000);
+}
+
+function isSafeCode(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-z0-9_]{1,100}$/.test(value);
+}
+
 export async function POST(req: NextRequest) {
+  if (!req.headers.get('content-type')?.toLowerCase().startsWith('application/json')) {
+    return json({ status: 'error', error: 'Content-Type must be application/json' }, 415);
+  }
+  const contentLength = Number.parseInt(req.headers.get('content-length') ?? '0', 10);
+  if (Number.isFinite(contentLength) && contentLength > MAX_PAGE_BODY_BYTES) {
+    return json({ status: 'error', code: 'page_too_large', error: 'Bookmark page is too large' }, 413);
+  }
+
   let body: unknown;
   try {
     body = await req.json();
   } catch {
-    return Response.json({ error: 'Invalid JSON body' }, { status: 400 });
+    return json({ status: 'error', error: 'Invalid JSON body' }, 400);
   }
+  if (!isObject(body)) return json({ status: 'error', error: 'Invalid request body' }, 400);
 
-  const { auth_token, ct0 } = (body as Record<string, string>) ?? {};
-  if (!auth_token || !ct0) {
-    return Response.json({ error: 'auth_token and ct0 are required' }, { status: 400 });
-  }
-
-  const status = getSyncStatus();
-  if (status.in_progress) {
-    return Response.json({ status: 'already_running' });
+  const action = body.action;
+  if (action === undefined && ('auth_token' in body || 'ct0' in body)) {
+    return json(
+      {
+        status: 'error',
+        code: 'extension_outdated',
+        error: 'This extension is outdated. Install the browser-assisted sync version.',
+      },
+      426,
+    );
   }
 
   try {
-    await upsertCredentials(auth_token, ct0);
-    const synced_count = await syncBookmarks(auth_token, ct0);
-    return Response.json({ status: 'success', synced_count });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    return Response.json({ status: 'error', error: message }, { status: 500 });
+    if (action === 'official') {
+      const requestedMode = body.mode ?? 'auto';
+      if (typeof requestedMode !== 'string' || !MODES.has(requestedMode as SyncMode)) {
+        return json({ status: 'error', error: 'mode must be auto, incremental, or full' }, 400);
+      }
+      const run = await syncOfficialBookmarks(requestedMode as SyncMode);
+      return json({ status: 'success', run });
+    }
+
+    if (action === 'start') {
+      const requestedMode = body.mode ?? 'auto';
+      if (typeof requestedMode !== 'string' || !MODES.has(requestedMode as SyncMode)) {
+        return json({ status: 'error', error: 'mode must be auto, incremental, or full' }, 400);
+      }
+      return json({ status: 'ready', run: startBrowserSync(requestedMode as SyncMode) });
+    }
+
+    if (action === 'page') {
+      if (!isRunId(body.run_id) || !isCursor(body.cursor) || !('payload' in body)) {
+        return json(
+          { status: 'error', error: 'run_id, cursor, and payload are required' },
+          400,
+        );
+      }
+      const result = ingestBrowserPage(body.run_id, body.cursor, body.payload);
+      return json(result);
+    }
+
+    if (action === 'fail') {
+      if (!isRunId(body.run_id) || !isSafeCode(body.code) || typeof body.error !== 'string') {
+        return json({ status: 'error', error: 'run_id, code, and error are required' }, 400);
+      }
+      const run = failBrowserSync(body.run_id, body.code, body.error);
+      return json({ status: run.status, run });
+    }
+
+    return json({ status: 'error', error: 'action must be official, start, page, or fail' }, 400);
+  } catch (error) {
+    if (error instanceof SyncAlreadyRunningError) {
+      return json({ status: 'already_running', run: error.run }, 409);
+    }
+    if (error instanceof SyncRunNotFoundError) {
+      return json({ status: 'error', code: 'sync_run_not_found', error: error.message }, 404);
+    }
+    if (error instanceof BrowserSyncError) {
+      return json({ status: 'error', code: error.code, error: error.message }, error.httpStatus);
+    }
+    return json({ status: 'error', code: 'sync_failed', error: 'Bookmark sync failed.' }, 500);
   }
 }

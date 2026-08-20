@@ -1,7 +1,7 @@
 import { rawDb } from '@/lib/db/client';
 import { db } from '@/lib/db/client';
 import { bookmarks } from '@/lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { NextRequest } from 'next/server';
 
 export async function GET(_req: NextRequest, ctx: RouteContext<'/api/bookmarks/[id]'>) {
@@ -10,19 +10,20 @@ export async function GET(_req: NextRequest, ctx: RouteContext<'/api/bookmarks/[
     .prepare(
       `SELECT b.id, b.tweet_id, b.full_text, b.author_name, b.author_handle,
         b.author_avatar, b.tweet_url, b.media_urls, b.quoted_tweet, b.bookmarked_at,
-        COALESCE(json_group_array(
-          CASE WHEN f.id IS NOT NULL THEN json_object('id', f.id, 'name', f.name, 'color', f.color) END
-        ) FILTER (WHERE f.id IS NOT NULL), '[]') AS folders_json,
-        COALESCE(json_group_array(
-          CASE WHEN t.id IS NOT NULL THEN json_object('id', t.id, 'name', t.name) END
-        ) FILTER (WHERE t.id IS NOT NULL), '[]') AS tags_json
+        COALESCE((
+          SELECT json_group_array(json_object('id', f.id, 'name', f.name, 'color', f.color))
+          FROM bookmark_folders bf
+          JOIN folders f ON f.id = bf.folder_id
+          WHERE bf.bookmark_id = b.id
+        ), '[]') AS folders_json,
+        COALESCE((
+          SELECT json_group_array(json_object('id', t.id, 'name', t.name))
+          FROM bookmark_tags bt
+          JOIN tags t ON t.id = bt.tag_id
+          WHERE bt.bookmark_id = b.id
+        ), '[]') AS tags_json
       FROM bookmarks b
-      LEFT JOIN bookmark_folders bf ON bf.bookmark_id = b.id
-      LEFT JOIN folders f ON f.id = bf.folder_id
-      LEFT JOIN bookmark_tags bt ON bt.bookmark_id = b.id
-      LEFT JOIN tags t ON t.id = bt.tag_id
-      WHERE b.id = ?
-      GROUP BY b.id`,
+      WHERE b.id = ? AND b.remote_present = 1 AND b.hidden_at IS NULL`,
     )
     .get(parseInt(id, 10)) as
     | {
@@ -54,6 +55,9 @@ export async function GET(_req: NextRequest, ctx: RouteContext<'/api/bookmarks/[
 
 export async function DELETE(_req: NextRequest, ctx: RouteContext<'/api/bookmarks/[id]'>) {
   const { id } = await ctx.params;
-  await db.delete(bookmarks).where(eq(bookmarks.id, parseInt(id, 10)));
+  await db
+    .update(bookmarks)
+    .set({ hiddenAt: sql`(unixepoch())`, updatedAt: sql`(unixepoch())` })
+    .where(eq(bookmarks.id, parseInt(id, 10)));
   return Response.json({ ok: true });
 }

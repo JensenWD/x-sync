@@ -49,6 +49,34 @@ export interface BookmarksResponse {
 export interface SyncStatus {
   in_progress: boolean;
   last_synced_at: number | null;
+  last_full_synced_at: number | null;
   total_bookmarks: number;
   last_error: string | null;
+  active_run: SyncRun | null;
+  last_run: SyncRun | null;
+}
+
+export interface SyncRun {
+  id: number;
+  requested_mode: 'auto' | 'incremental' | 'full';
+  mode: 'incremental' | 'full';
+  status: 'running' | 'success' | 'failed';
+  started_at: number;
+  heartbeat_at: number;
+  finished_at: number | null;
+  pages_fetched: number;
+  bookmarks_fetched: number;
+  bookmarks_inserted: number;
+  bookmarks_existing: number;
+  remote_removed: number;
+  stop_reason: string | null;
+  error_code: string | null;
+  error_message: string | null;
+}
+
+export interface XConnectionStatus {
+  configured: boolean;
+  connected: boolean;
+  username: string | null;
+  scope: string | null;
 }

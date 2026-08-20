@@ -18,8 +18,8 @@ import { useBookmarks } from '@/hooks/use-bookmarks';
 import { useDebounce } from '@/hooks/use-debounce';
 
 const SORT_LABELS: Record<string, string> = {
-  bookmarked_at_desc: 'Newest first',
-  bookmarked_at_asc: 'Oldest first',
+  bookmarked_at_desc: 'Recently bookmarked',
+  bookmarked_at_asc: 'Oldest bookmarked',
   author_asc: 'Author A–Z',
 };
 
@@ -71,7 +71,7 @@ export function BookmarkGrid() {
   return (
     <div className="flex-1 flex flex-col min-h-0">
       {/* Toolbar */}
-      <div className="sticky top-0 z-10 bg-background border-b border-border px-6 py-3 space-y-2">
+      <div className="sticky top-0 z-10 bg-background border-b border-border px-4 md:px-6 py-3 space-y-2">
         <div className="flex items-center gap-3">
           {/* Search */}
           <div className="flex-1 relative">
@@ -152,7 +152,7 @@ export function BookmarkGrid() {
       </div>
 
       {/* Grid */}
-      <div className="flex-1 overflow-y-auto px-6 py-5">
+      <div className="flex-1 overflow-y-auto px-4 md:px-6 py-5">
         {isLoading ? (
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
             {Array.from({ length: 8 }).map((_, i) => (
@@ -165,7 +165,7 @@ export function BookmarkGrid() {
             <p className="text-text-secondary text-sm">
               {debouncedSearch || folderId || activeTag
                 ? 'No bookmarks match your filters'
-                : 'No bookmarks yet — sync from the extension'}
+                : 'No bookmarks yet — connect X and sync'}
             </p>
           </div>
         ) : (

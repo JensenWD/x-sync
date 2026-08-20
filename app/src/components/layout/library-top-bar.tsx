@@ -95,14 +95,14 @@ export function LibraryTopBar() {
   return (
     <>
       {/* Desktop — 2a: title left, search centred, account right. */}
-      <div className="hidden items-center gap-7 border-b border-hairline px-8 py-4 md:flex">
+      <div className="hidden items-center gap-7 border-b border-hairline px-8 py-3 md:flex">
         <span className="font-serif text-[19px] font-medium tracking-[-0.01em] text-text-primary">
           Saved
         </span>
         <div className="flex flex-1 justify-center">
           <label
             className={cn(
-              'flex w-[460px] items-center gap-[9px] rounded-full border border-input-border bg-input px-3.5 py-[9px]',
+              'flex w-[460px] items-center gap-[9px] rounded-full border border-input-border bg-input px-3.5 py-[7px]',
               'transition-colors focus-within:border-[#3a3a41]',
             )}
           >
@@ -122,18 +122,20 @@ export function LibraryTopBar() {
       </div>
 
       {/* Mobile — 3a: stacked title row, then a full-width search field. */}
-      <div className="px-5 pt-5 md:hidden">
+      <div className="px-5 pt-3 md:hidden">
         <div className="flex items-center justify-between">
-          <span className="font-serif text-[26px] tracking-[-0.01em] text-text-primary">Saved</span>
+          <span className="font-serif text-[23px] leading-none tracking-[-0.01em] text-text-primary">
+            Saved
+          </span>
           {account}
         </div>
-        <label className="mt-4 flex h-11 items-center gap-2.5 rounded-[12px] border border-input-border bg-input px-3.5">
+        <label className="mt-2.5 flex h-10 items-center gap-2.5 rounded-[10px] border border-input-border bg-input px-3.5">
           <span className="size-[5px] shrink-0 rounded-full bg-[#5c5c62]" />
           <input
             value={value}
             onChange={(event) => setValue(event.target.value)}
             placeholder={placeholder}
-            className="min-w-0 flex-1 bg-transparent text-[15px] text-text-primary outline-none placeholder:text-[#75757b]"
+            className="min-w-0 flex-1 bg-transparent text-[16px] text-text-primary outline-none placeholder:text-[#75757b]"
           />
           {value ? clearButton : null}
         </label>

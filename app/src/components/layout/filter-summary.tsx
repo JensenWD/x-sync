@@ -98,7 +98,7 @@ export function FilterSummary({ resultCount }: { resultCount: number | undefined
   return (
     <>
       {/* Desktop — 2a's result row. */}
-      <div className="hidden items-center gap-2.5 border-b border-hairline px-8 py-[11px] md:flex">
+      <div className="hidden items-center gap-2.5 border-b border-hairline px-8 py-1.5 md:flex">
         <span className="shrink-0 text-[13px] text-text-tertiary">
           {resultCount.toLocaleString()} {plural(resultCount)}
         </span>
@@ -158,7 +158,7 @@ export function FilterSummary({ resultCount }: { resultCount: number | undefined
       {/* Mobile — 3b's sentence. Unfiltered, 3a runs the tags row straight into
           the card list, so this row only exists once a facet is active. */}
       {hasFilters && (
-        <div className="flex items-baseline justify-between gap-3 border-b border-hairline px-5 py-3.5 md:hidden">
+        <div className="flex items-baseline justify-between gap-3 border-b border-hairline px-5 py-2.5 md:hidden">
           <span className="font-serif text-[16px] text-[#d6d6da]">
             {describe({ count: resultCount, tags, joiner, folderName, search })}
           </span>

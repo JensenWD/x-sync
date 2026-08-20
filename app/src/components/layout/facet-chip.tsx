@@ -35,8 +35,8 @@ export function CollectionChip({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        'flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full px-3.5 py-2 text-[14px] transition-colors duration-150',
-        'md:py-1.5 md:text-[13px]',
+        'flex h-[34px] shrink-0 items-center gap-2 whitespace-nowrap rounded-full px-3 text-[13px] transition-colors duration-150',
+        'md:h-auto md:px-3.5 md:py-1.5 md:text-[13px]',
         active
           ? 'bg-primary font-medium text-primary-foreground'
           : 'border border-input-border text-text-secondary hover:border-[#3a3a3f] hover:text-text-primary',

@@ -22,7 +22,7 @@ export function BookmarkGrid({ query }: { query: UseQueryResult<BookmarksRespons
     'columns-1 gap-x-5 md:columns-2 xl:columns-3 [&>*]:mb-3.5 md:[&>*]:mb-5 [&>*]:break-inside-avoid';
 
   return (
-    <div className="flex-1 overflow-y-auto px-5 pt-4 pb-16 md:px-8 md:pt-5 md:pb-8">
+    <div className="flex-1 overflow-y-auto px-5 pt-3 pb-16 md:px-8 md:pt-4 md:pb-8">
       {isLoading ? (
         <div className={columns}>
           {Array.from({ length: 9 }).map((_, index) => (

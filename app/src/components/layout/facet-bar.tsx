@@ -20,11 +20,29 @@ import type { Tag } from '@/types';
 
 const ROW_LABEL = 'shrink-0 font-serif text-[14px] italic text-muted-foreground';
 
-function SortMenu({ sort, onSelect }: { sort: string; onSelect: (value: string) => void }) {
+function SortMenu({
+  sort,
+  onSelect,
+  compact = false,
+}: {
+  sort: string;
+  onSelect: (value: string) => void;
+  compact?: boolean;
+}) {
+  const label = SORT_LABELS[sort] ?? SORT_LABELS.bookmarked_at_desc;
+
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger className="flex shrink-0 items-center gap-1 text-[13px] text-muted-foreground transition-colors hover:text-text-primary">
-        {SORT_LABELS[sort] ?? SORT_LABELS.bookmarked_at_desc}
+      <DropdownMenuTrigger
+        aria-label={`Sort saved posts: ${label}`}
+        className={cn(
+          'flex shrink-0 items-center gap-1 transition-colors hover:text-text-primary',
+          compact
+            ? 'h-[34px] rounded-[8px] border border-input-border bg-[#17171a] px-2.5 font-mono text-[12px] text-text-secondary'
+            : 'text-[13px] text-muted-foreground',
+        )}
+      >
+        {label}
         <ChevronDownIcon className="size-3.5" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="border-border bg-popover">
@@ -170,7 +188,7 @@ export function FacetBar({ resultCount }: { resultCount: number | undefined }) {
   return (
     <>
       {/* Desktop row one — collections. */}
-      <div className="hidden items-center gap-2 px-8 pt-3.5 pb-3 md:flex">
+      <div className="hidden items-center gap-2 px-8 pt-2 pb-2 md:flex">
         <span className={cn(ROW_LABEL, 'mr-1.5')}>collections</span>
         <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto scrollbar-none">
           {collectionChips}
@@ -182,14 +200,14 @@ export function FacetBar({ resultCount }: { resultCount: number | undefined }) {
       </div>
 
       {/* Desktop row two — tags, with inline narrowing and the any/all joiner. */}
-      <div className="hidden items-center gap-2 border-b border-hairline bg-surface px-8 pt-2.5 pb-3 md:flex">
+      <div className="hidden items-center gap-2 border-b border-hairline bg-surface px-8 py-1.5 md:flex">
         <span className={cn(ROW_LABEL, 'mr-1.5')}>tags</span>
         <input
           value={tagFilter}
           onChange={(event) => setTagFilter(event.target.value)}
           placeholder="filter tags…"
           aria-label="Filter the tag list"
-          className="w-[150px] shrink-0 rounded-[6px] border border-[#26262a] bg-[#17171a] px-2.5 py-[5px] font-mono text-[11px] text-text-primary outline-none transition-colors placeholder:text-text-faint focus:border-[#3a3a41]"
+          className="w-[150px] shrink-0 rounded-[6px] border border-[#26262a] bg-[#17171a] px-2.5 py-1 font-mono text-[11px] text-text-primary outline-none transition-colors placeholder:text-text-faint focus:border-[#3a3a41]"
         />
         <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto scrollbar-none">
           {allTags.length === 0 ? (
@@ -204,12 +222,15 @@ export function FacetBar({ resultCount }: { resultCount: number | undefined }) {
       </div>
 
       {/* Mobile row one — collections. */}
-      <div className="flex gap-2 overflow-x-auto scrollbar-none px-5 pt-4 md:hidden">
-        {collectionChips}
+      <div className="flex items-center gap-2 px-5 pt-2.5 md:hidden">
+        <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto scrollbar-none">
+          {collectionChips}
+        </div>
+        <SortMenu sort={sort} onSelect={setSort} compact />
       </div>
 
       {/* Mobile row two — tags, with the sheet behind the leading control. */}
-      <div className="flex items-center gap-2 overflow-x-auto scrollbar-none border-b border-hairline px-5 pt-3 pb-3.5 md:hidden">
+      <div className="flex items-center gap-2 overflow-x-auto scrollbar-none border-b border-hairline px-5 pt-2 pb-2.5 md:hidden">
         <button
           type="button"
           onClick={() => setSheetOpen(true)}

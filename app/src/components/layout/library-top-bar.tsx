@@ -109,6 +109,7 @@ export function LibraryTopBar() {
             <span className="size-[5px] shrink-0 rounded-full bg-[#5c5c62]" />
             <input
               ref={desktopInput}
+              data-library-search
               value={value}
               onChange={(event) => setValue(event.target.value)}
               onKeyDown={(event) => event.key === 'Escape' && setValue('')}
@@ -132,6 +133,7 @@ export function LibraryTopBar() {
         <label className="mt-2.5 flex h-10 items-center gap-2.5 rounded-[10px] border border-input-border bg-input px-3.5">
           <span className="size-[5px] shrink-0 rounded-full bg-[#5c5c62]" />
           <input
+            data-library-search
             value={value}
             onChange={(event) => setValue(event.target.value)}
             placeholder={placeholder}

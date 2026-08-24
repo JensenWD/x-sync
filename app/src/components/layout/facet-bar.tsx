@@ -9,6 +9,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { CreateFolderPopover } from '@/components/folder/create-folder-popover';
+import { SelectToggle } from '@/components/bookmark/select-toggle';
 import { TagSheet } from '@/components/tag/tag-sheet';
 import { CollectionChip, TagChip } from './facet-chip';
 import { useFolders } from '@/hooks/use-folders';
@@ -106,7 +107,15 @@ function ModeToggle({
  * 3a's two horizontally scrolling rows on mobile, where the long tail of tags
  * moves into a sheet reached from the row's leading control.
  */
-export function FacetBar({ resultCount }: { resultCount: number | undefined }) {
+export function FacetBar({
+  resultCount,
+  selecting,
+  onToggleSelecting,
+}: {
+  resultCount: number | undefined;
+  selecting: boolean;
+  onToggleSelecting: () => void;
+}) {
   const { folderId, tags, tagMode, sort, setFolder, toggleTag, setTagMode, setSort } =
     useLibraryFilters();
   const { data: folders = [] } = useFolders();
@@ -221,11 +230,13 @@ export function FacetBar({ resultCount }: { resultCount: number | undefined }) {
         <ModeToggle mode={tagMode} onChange={setTagMode} enabled={tags.length > 1} />
       </div>
 
-      {/* Mobile row one — collections. */}
+      {/* Mobile row one — collections. A phone has no hover to reveal the card
+          checkboxes, so this is where a bulk selection is started. */}
       <div className="flex items-center gap-2 px-5 pt-2.5 md:hidden">
         <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto scrollbar-none">
           {collectionChips}
         </div>
+        <SelectToggle selecting={selecting} onToggle={onToggleSelecting} compact />
         <SortMenu sort={sort} onSelect={setSort} compact />
       </div>
 

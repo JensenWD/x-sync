@@ -1,56 +1,16 @@
 import { rawDb } from '@/lib/db/client';
 import { NextRequest } from 'next/server';
-
-interface BookmarkRow {
-  id: number;
-  tweet_id: string;
-  full_text: string;
-  author_name: string;
-  author_handle: string;
-  author_avatar: string | null;
-  tweet_url: string;
-  media_urls: string | null;
-  quoted_tweet: string | null;
-  bookmarked_at: number | null;
-  created_at: number;
-  folders_json: string;
-  tags_json: string;
-}
-
-function parseBookmark(row: BookmarkRow) {
-  return {
-    id: row.id,
-    tweet_id: row.tweet_id,
-    full_text: row.full_text,
-    author_name: row.author_name,
-    author_handle: row.author_handle,
-    author_avatar: row.author_avatar,
-    tweet_url: row.tweet_url,
-    media_urls: row.media_urls ? JSON.parse(row.media_urls) : [],
-    quoted_tweet: row.quoted_tweet ? JSON.parse(row.quoted_tweet) : null,
-    bookmarked_at: row.bookmarked_at,
-    folders: JSON.parse(row.folders_json || '[]'),
-    tags: JSON.parse(row.tags_json || '[]'),
-  };
-}
+import { ftsPrefixQuery, searchTokens } from '@/lib/search-tokens';
+import { X_HANDLE_PATTERN } from '@/lib/x-handle';
+import {
+  DASHBOARD_BOOKMARK_COLUMNS,
+  parseDashboardBookmark,
+  type DashboardBookmarkRow,
+} from '@/lib/dashboard-bookmark';
 
 const BASE_SELECT = `
   SELECT
-    b.id, b.tweet_id, b.full_text, b.author_name, b.author_handle,
-    b.author_avatar, b.tweet_url, b.media_urls, b.quoted_tweet, b.bookmarked_at,
-    b.created_at,
-    COALESCE((
-      SELECT json_group_array(json_object('id', f.id, 'name', f.name, 'color', f.color))
-      FROM bookmark_folders bf
-      JOIN folders f ON f.id = bf.folder_id
-      WHERE bf.bookmark_id = b.id
-    ), '[]') AS folders_json,
-    COALESCE((
-      SELECT json_group_array(json_object('id', t.id, 'name', t.name))
-      FROM bookmark_tags bt
-      JOIN tags t ON t.id = bt.tag_id
-      WHERE bt.bookmark_id = b.id
-    ), '[]') AS tags_json
+${DASHBOARD_BOOKMARK_COLUMNS}
   FROM bookmarks b
 `;
 
@@ -118,14 +78,23 @@ export async function GET(req: NextRequest) {
   const joins: string[] = [];
 
   if (search) {
-    const tokens = search.normalize('NFKC').match(/[\p{L}\p{N}_]+/gu)?.slice(0, 32) ?? [];
+    const tokens = searchTokens(search);
     if (tokens.length === 0) {
       return Response.json({ error: 'search must contain letters or numbers' }, { status: 400 });
     }
-    const ftsQuery = tokens.map((token) => `"${token.replaceAll('"', '""')}"*`).join(' AND ');
     joins.push('JOIN bookmarks_fts ON bookmarks_fts.rowid = b.id');
     conditions.push('bookmarks_fts MATCH ?');
-    params.push(ftsQuery);
+    params.push(ftsPrefixQuery(tokens));
+  }
+
+  // A leading @ is what people paste, and handles are stored as X spells them.
+  const author = searchParams.get('author')?.trim().replace(/^@/, '');
+  if (author !== undefined && author !== '') {
+    if (!X_HANDLE_PATTERN.test(author)) {
+      return Response.json({ error: 'author must be an X handle' }, { status: 400 });
+    }
+    conditions.push('lower(b.author_handle) = ?');
+    params.push(author.toLocaleLowerCase());
   }
 
   if (folderId) {
@@ -161,6 +130,8 @@ export async function GET(req: NextRequest) {
     bookmarked_at_asc:
       'b.remote_order_run_id ASC NULLS FIRST, b.remote_order_position DESC NULLS LAST, b.id ASC',
     author_asc: 'b.author_handle ASC, b.id DESC',
+    // Posts synced before public_metrics was requested sort last rather than first.
+    likes_desc: 'b.like_count DESC NULLS LAST, b.id DESC',
   };
   const orderBy = sortMap[sort] || sortMap.bookmarked_at_desc;
 
@@ -177,10 +148,10 @@ export async function GET(req: NextRequest) {
     ORDER BY ${orderBy}
     LIMIT ? OFFSET ?
   `;
-  const rows = rawDb.prepare(dataSql).all(...params, perPage, offset) as BookmarkRow[];
+  const rows = rawDb.prepare(dataSql).all(...params, perPage, offset) as DashboardBookmarkRow[];
 
   return Response.json({
-    data: rows.map(parseBookmark),
+    data: rows.map(parseDashboardBookmark),
     meta: {
       total,
       per_page: perPage,

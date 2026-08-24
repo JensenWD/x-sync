@@ -44,14 +44,15 @@ export function useDeleteFolder() {
   });
 }
 
+/** The route takes a list, so one post and a whole selection are the same call. */
 export function useAddToFolder() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ folderId, bookmarkId }: { folderId: number; bookmarkId: number }) =>
-      fetchJson(`/api/folders/${folderId}/bookmarks`, {
+    mutationFn: ({ folderId, bookmarkIds }: { folderId: number; bookmarkIds: number[] }) =>
+      fetchJson<{ ok: true; count: number }>(`/api/folders/${folderId}/bookmarks`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bookmark_ids: [bookmarkId] }),
+        body: JSON.stringify({ bookmark_ids: bookmarkIds }),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bookmarks'] });

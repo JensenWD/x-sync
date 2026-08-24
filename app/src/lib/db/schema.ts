@@ -29,8 +29,18 @@ export const bookmarks = sqliteTable(
     authorAvatar: text('author_avatar'),
     tweetUrl: text('tweet_url').notNull().default(''),
     mediaUrls: text('media_urls'), // JSON array
-    mediaMetadata: text('media_metadata'), // JSON array with type/key/url metadata
+    mediaMetadata: text('media_metadata'), // JSON array with type/key/url/size/playback metadata
     quotedTweet: text('quoted_tweet'), // JSON object
+    links: text('links'), // JSON array of resolved t.co entities
+    conversationId: text('conversation_id'), // Thread the post belongs to
+    // Public metrics ride the same bookmark request, so they cost nothing extra.
+    // Null means "never observed" — a real zero is stored as 0.
+    likeCount: integer('like_count'),
+    replyCount: integer('reply_count'),
+    retweetCount: integer('retweet_count'),
+    quoteCount: integer('quote_count'),
+    postBookmarkCount: integer('bookmark_count'),
+    impressionCount: integer('impression_count'),
     bookmarkedAt: integer('bookmarked_at'), // Tweet publication time; X does not expose save time
     syncedAt: integer('synced_at'), // Last time this bookmark was observed on X
     remotePresent: integer('remote_present', { mode: 'boolean' }).notNull().default(true),
@@ -43,6 +53,9 @@ export const bookmarks = sqliteTable(
   (t) => [
     index('bookmarks_visibility_idx').on(t.remotePresent, t.hiddenAt),
     index('bookmarks_remote_order_idx').on(t.remoteOrderRunId, t.remoteOrderPosition),
+    // Only like_count has a reader (the "Most liked" sort). conversation_id is
+    // stored for a future thread view; indexing it now is write cost for nothing.
+    index('bookmarks_like_count_idx').on(t.likeCount),
   ],
 );
 

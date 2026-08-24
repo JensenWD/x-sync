@@ -1,9 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { memo, useState, type MouseEvent } from 'react';
 import Image from 'next/image';
+import { CheckIcon } from 'lucide-react';
 import { cn, compactAge } from '@/lib/utils';
 import { useLibraryFilters } from '@/hooks/use-library-filters';
+import { CardMedia } from './post-media';
+import { PostMetrics } from './post-metrics';
+import { PostText } from './post-text';
 import type { Bookmark } from '@/types';
 
 export function PostAvatar({
@@ -45,52 +49,100 @@ export function PostAvatar({
   );
 }
 
-/** First image plus a "+N" marker — the card teases media, the reader shows it all. */
-export function PostMedia({ urls, className }: { urls: string[]; className?: string }) {
-  if (urls.length === 0) return null;
+/** The handle doubles as the author facet — card and reader share the control. */
+export function AuthorHandle({
+  handle,
+  suffix,
+  tokens,
+  className,
+}: {
+  handle: string;
+  suffix?: string;
+  tokens?: string[];
+  className?: string;
+}) {
+  const { author, toggleAuthor } = useLibraryFilters();
   return (
-    <div className={cn('relative w-full overflow-hidden rounded-[10px] bg-[#16161a] md:rounded-[8px]', className)}>
-      <Image
-        src={urls[0]}
-        alt="Post media"
-        fill
-        className="object-cover"
-        unoptimized
-        sizes="(min-width: 1280px) 33vw, (min-width: 768px) 50vw, 100vw"
-      />
-      {urls.length > 1 && (
-        <span className="absolute right-2 bottom-2 rounded bg-black/60 px-1.5 py-0.5 font-mono text-[10px] text-text-primary">
-          +{urls.length - 1}
-        </span>
+    <button
+      type="button"
+      onClick={(event) => {
+        event.stopPropagation();
+        toggleAuthor(handle);
+      }}
+      title={`Only posts from @${handle}`}
+      className={cn(
+        'w-fit max-w-full truncate text-left transition-colors hover:text-text-primary',
+        author === handle ? 'text-text-secondary' : 'text-muted-foreground',
+        className,
       )}
-    </div>
+    >
+      @<PostText text={handle} tokens={tokens} />
+      {suffix}
+    </button>
   );
+}
+
+interface BookmarkCardProps {
+  bookmark: Bookmark;
+  index: number;
+  tokens: string[];
+  selected: boolean;
+  /** Checkboxes are pinned open while organizing; otherwise they wait for hover. */
+  selectVisible: boolean;
+  onToggleSelect: (id: number) => void;
+  onExtendSelect: (id: number) => void;
 }
 
 /**
  * 2a / 3a post card. Deliberately chrome-free: the whole card opens the reader,
- * which is where every action on a post lives.
+ * which is where every action on a post lives. The one exception is the
+ * selection checkbox, which takes over the timestamp's corner while organizing
+ * so the header keeps its metrics instead of shifting on hover.
+ *
+ * Memoized because building a selection re-renders the whole grid on every
+ * click, and a card is an expensive subtree.
  */
-export function BookmarkCard({ bookmark }: { bookmark: Bookmark }) {
+export const BookmarkCard = memo(function BookmarkCard({
+  bookmark,
+  index,
+  tokens,
+  selected,
+  selectVisible,
+  onToggleSelect,
+  onExtendSelect,
+}: BookmarkCardProps) {
   const { folderId, tags, setFolder, toggleTag, openPost } = useLibraryFilters();
   const age = bookmark.bookmarked_at ? compactAge(bookmark.bookmarked_at) : null;
   const primaryFolder = bookmark.folders[0] ?? null;
+
+  function activate(event: MouseEvent) {
+    if (event.shiftKey) onExtendSelect(bookmark.id);
+    // Once a selection exists, a plain click keeps building it — opening a post
+    // mid-sweep would lose the set you were assembling.
+    else if (event.metaKey || event.ctrlKey || selectVisible) onToggleSelect(bookmark.id);
+    else openPost(bookmark.id);
+  }
 
   return (
     <article
       role="button"
       tabIndex={0}
+      data-card-index={index}
       aria-label={`Open post by ${bookmark.author_name}`}
-      onClick={() => openPost(bookmark.id)}
+      onClick={activate}
       onKeyDown={(event) => {
         if (event.key !== 'Enter' && event.key !== ' ') return;
         event.preventDefault();
-        openPost(bookmark.id);
+        if (event.key === ' ') onToggleSelect(bookmark.id);
+        else openPost(bookmark.id);
       }}
       className={cn(
-        'flex cursor-pointer flex-col gap-[13px] rounded-[14px] border border-card-border bg-card p-[18px] md:gap-3.5 md:rounded-[12px] md:p-5',
-        'transition-colors duration-150 hover:border-card-border-hover hover:bg-card-hover',
-        'focus-visible:border-card-border-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
+        'group relative flex cursor-pointer flex-col gap-[13px] rounded-[14px] border bg-card p-[18px] md:gap-3.5 md:rounded-[12px] md:p-5',
+        'transition-colors duration-150 hover:bg-card-hover',
+        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
+        selected
+          ? 'border-chip-active-border bg-card-hover'
+          : 'border-card-border hover:border-card-border-hover',
       )}
     >
       <div className="flex items-center gap-2.5">
@@ -101,18 +153,52 @@ export function BookmarkCard({ bookmark }: { bookmark: Bookmark }) {
         />
         <div className="flex min-w-0 flex-1 flex-col">
           <span className="truncate text-[14px] font-medium text-text-primary md:text-[13px]">
-            {bookmark.author_name}
+            <PostText text={bookmark.author_name} tokens={tokens} />
           </span>
-          <span className="truncate text-[12px] text-muted-foreground md:text-[11px]">
-            @{bookmark.author_handle}
-          </span>
+          <AuthorHandle
+            handle={bookmark.author_handle}
+            tokens={tokens}
+            className="text-[12px] md:text-[11px]"
+          />
         </div>
-        {age && <span className="shrink-0 text-[12px] text-text-faint md:text-[11px]">{age}</span>}
+
+        <button
+          type="button"
+          role="checkbox"
+          aria-checked={selected}
+          aria-label={`Select post by ${bookmark.author_name}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            if (event.shiftKey) onExtendSelect(bookmark.id);
+            else onToggleSelect(bookmark.id);
+          }}
+          className={cn(
+            'size-[18px] shrink-0 items-center justify-center rounded-[5px] border transition-colors',
+            selected
+              ? 'border-chip-active-border bg-chip-active text-chip-active-foreground'
+              : 'border-input-border text-transparent hover:border-[#4a4a52]',
+            selectVisible ? 'flex' : 'hidden group-hover:flex group-focus-within:flex',
+          )}
+        >
+          <CheckIcon className="size-3" />
+        </button>
+        {age && (
+          <span
+            className={cn(
+              'shrink-0 text-[12px] text-text-faint md:text-[11px]',
+              selectVisible ? 'hidden' : 'group-hover:hidden group-focus-within:hidden',
+            )}
+          >
+            {age}
+          </span>
+        )}
       </div>
 
-      <p className="line-clamp-[14] font-serif text-[19px] leading-[1.5] whitespace-pre-wrap text-[#d6d6da] md:text-[18px]">
-        {bookmark.full_text}
-      </p>
+      {bookmark.body && (
+        <p className="line-clamp-[14] font-serif text-[19px] leading-[1.5] whitespace-pre-wrap text-[#d6d6da] md:text-[18px]">
+          <PostText text={bookmark.body} links={bookmark.links} tokens={tokens} stopPropagation />
+        </p>
+      )}
 
       {bookmark.quoted_tweet && (
         <div className="rounded-lg border border-card-border bg-[#101012] p-3">
@@ -125,12 +211,19 @@ export function BookmarkCard({ bookmark }: { bookmark: Bookmark }) {
             </span>
           </div>
           <p className="line-clamp-3 font-serif text-[15px] leading-[1.5] text-[#9a9aa0]">
-            {bookmark.quoted_tweet.full_text}
+            <PostText
+              text={bookmark.quoted_tweet.body}
+              links={bookmark.quoted_tweet.links}
+              tokens={tokens}
+              stopPropagation
+            />
           </p>
         </div>
       )}
 
-      <PostMedia urls={bookmark.media_urls ?? []} className="h-[180px] md:h-[170px]" />
+      <CardMedia items={bookmark.media} />
+
+      <PostMetrics metrics={bookmark.metrics} />
 
       {(bookmark.folders.length > 0 || bookmark.tags.length > 0) && (
         <div
@@ -171,4 +264,4 @@ export function BookmarkCard({ bookmark }: { bookmark: Bookmark }) {
       )}
     </article>
   );
-}
+});

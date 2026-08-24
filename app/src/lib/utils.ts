@@ -16,3 +16,14 @@ export function compactAge(epochSeconds: number) {
   if (seconds < 86_400) return `${Math.floor(seconds / 3600)}h`
   return `${Math.floor(seconds / 86_400)}d`
 }
+
+/** "812", "4.2K", "1.3M" — engagement counts at the size the metric row gives them. */
+export function compactCount(value: number) {
+  if (value < 1000) return String(value)
+  if (value < 1_000_000) {
+    const thousands = value / 1000
+    return `${thousands < 10 ? thousands.toFixed(1).replace(/\.0$/, '') : Math.round(thousands)}K`
+  }
+  const millions = value / 1_000_000
+  return `${millions < 10 ? millions.toFixed(1).replace(/\.0$/, '') : Math.round(millions)}M`
+}

@@ -7,6 +7,7 @@ interface BookmarkFilters {
   folder_id?: number | null;
   tags?: string[];
   tag_mode?: 'all' | 'any';
+  author?: string;
   sort?: string;
   per_page?: number;
   page?: number;
@@ -20,6 +21,7 @@ export function useBookmarks(filters: BookmarkFilters = {}) {
     params.set('tags', filters.tags.join(','));
     if (filters.tag_mode) params.set('tag_mode', filters.tag_mode);
   }
+  if (filters.author) params.set('author', filters.author);
   if (filters.sort) params.set('sort', filters.sort);
   if (filters.per_page) params.set('per_page', String(filters.per_page));
   if (filters.page) params.set('page', String(filters.page));
@@ -81,6 +83,30 @@ export function useRemoveTag() {
       queryClient.invalidateQueries({ queryKey: ['bookmarks'] });
       queryClient.invalidateQueries({ queryKey: ['bookmark'] });
       queryClient.invalidateQueries({ queryKey: ['tags'] });
+    },
+  });
+}
+
+/**
+ * One tag onto a whole selection in a single request. The per-post `useAddTag`
+ * stays for the reader; fanning a selection out into N requests would leave the
+ * library half-tagged the moment one of them failed.
+ */
+export function useBulkAddTag() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ bookmarkIds, name }: { bookmarkIds: number[]; name: string }) =>
+      fetchJson<{ ok: true; count: number }>('/api/tags/bookmarks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, bookmark_ids: bookmarkIds }),
+      }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['bookmarks'] }),
+        queryClient.invalidateQueries({ queryKey: ['bookmark'] }),
+        queryClient.invalidateQueries({ queryKey: ['tags'] }),
+      ]);
     },
   });
 }

@@ -1,4 +1,4 @@
-import type { ParsedTimelinePage, XBookmarkRecord } from '@/lib/x-sync/types';
+import type { ParsedTimelinePage, XBookmarkLink, XBookmarkRecord } from '@/lib/x-sync/types';
 
 type JsonObject = Record<string, unknown>;
 
@@ -10,6 +10,10 @@ function asObject(value: unknown): JsonObject | null {
 
 function asString(value: unknown): string | null {
   return typeof value === 'string' ? value : null;
+}
+
+function asCount(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.trunc(value) : null;
 }
 
 function objectArray(value: unknown): JsonObject[] {
@@ -28,33 +32,102 @@ function fullText(tweet: JsonObject) {
   return asString(asObject(tweet.note_tweet)?.text) ?? asString(tweet.text) ?? '';
 }
 
+/** Highest-bitrate progressive MP4 — the one variant a `<video>` element can play directly. */
+function playbackUrl(item: JsonObject): string | null {
+  let best: { bitRate: number; url: string } | null = null;
+  for (const variant of objectArray(item.variants)) {
+    const url = asString(variant.url);
+    if (!url || asString(variant.content_type) !== 'video/mp4') continue;
+    const bitRate = asCount(variant.bit_rate) ?? 0;
+    if (!best || bitRate > best.bitRate) best = { bitRate, url };
+  }
+  return best?.url ?? null;
+}
+
+/**
+ * Media carries its intrinsic size so the grid can lay a card out at the post's
+ * own aspect ratio instead of cropping everything into one fixed box.
+ */
+function mediaItem(item: JsonObject) {
+  return {
+    media_key: asString(item.media_key),
+    type: asString(item.type),
+    url: asString(item.url),
+    preview_image_url: asString(item.preview_image_url),
+    width: asCount(item.width),
+    height: asCount(item.height),
+    duration_ms: asCount(item.duration_ms),
+    alt_text: asString(item.alt_text),
+    playback_url: playbackUrl(item),
+  };
+}
+
+function mediaFor(tweet: JsonObject, media: Map<string, JsonObject>) {
+  const keys = Array.isArray(asObject(tweet.attachments)?.media_keys)
+    ? ((asObject(tweet.attachments)?.media_keys as unknown[]).map(asString).filter(Boolean) as string[])
+    : [];
+  return keys
+    .map((key) => media.get(key))
+    .filter((item): item is JsonObject => Boolean(item))
+    .map(mediaItem);
+}
+
+/**
+ * Resolves every `t.co` in a post back to its destination. A long post carries
+ * its own entity set alongside the truncated one, so both are merged; the two
+ * `t.co`s X appends for attached media and for a quoted post are marked so the
+ * renderer can drop them rather than print a bare shortlink.
+ */
+function tweetLinks(tweet: JsonObject, quotedId: string | null): XBookmarkLink[] {
+  const entities = [
+    ...objectArray(asObject(tweet.entities)?.urls),
+    ...objectArray(asObject(asObject(tweet.note_tweet)?.entities)?.urls),
+  ];
+  const links: XBookmarkLink[] = [];
+  const seen = new Set<string>();
+
+  for (const entity of entities) {
+    const url = asString(entity.url);
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+
+    const expandedUrl = asString(entity.expanded_url);
+    const displayUrl = asString(entity.display_url);
+    const isMedia =
+      typeof entity.media_key === 'string' || /^pic\.(x|twitter)\.com\//u.test(displayUrl ?? '');
+    const isQuote = Boolean(quotedId && expandedUrl?.includes(`/status/${quotedId}`));
+
+    links.push({
+      url,
+      expanded_url: expandedUrl,
+      display_url: displayUrl,
+      title: asString(entity.title),
+      description: asString(entity.description),
+      kind: isMedia ? 'media' : isQuote ? 'quote' : 'link',
+    });
+  }
+
+  return links;
+}
+
+function quotedTweetId(tweet: JsonObject) {
+  const reference = objectArray(tweet.referenced_tweets).find(
+    (item) => asString(item.type) === 'quoted',
+  );
+  return asString(reference?.id);
+}
+
 function quotedTweet(
-  tweet: JsonObject,
+  quotedId: string | null,
   tweets: Map<string, JsonObject>,
   users: Map<string, JsonObject>,
   media: Map<string, JsonObject>,
 ) {
-  const reference = objectArray(tweet.referenced_tweets).find(
-    (item) => asString(item.type) === 'quoted',
-  );
-  const quotedId = asString(reference?.id);
   const quoted = quotedId ? tweets.get(quotedId) : undefined;
   if (!quotedId || !quoted) return null;
 
   const author = users.get(asString(quoted.author_id) ?? '');
   const authorHandle = asString(author?.username) ?? '';
-  const attachmentKeys = Array.isArray(asObject(quoted.attachments)?.media_keys)
-    ? (asObject(quoted.attachments)?.media_keys as unknown[]).map(asString).filter(Boolean) as string[]
-    : [];
-  const mediaItems = attachmentKeys
-    .map((key) => media.get(key))
-    .filter(Boolean)
-    .map((item) => ({
-      media_key: asString(item?.media_key),
-      type: asString(item?.type),
-      url: asString(item?.url),
-      preview_image_url: asString(item?.preview_image_url),
-    }));
   return {
     tweet_id: quotedId,
     full_text: fullText(quoted),
@@ -65,7 +138,9 @@ function quotedTweet(
       ? `https://x.com/${authorHandle}/status/${quotedId}`
       : `https://x.com/i/web/status/${quotedId}`,
     created_at: asString(quoted.created_at),
-    media: mediaItems,
+    media: mediaFor(quoted, media),
+    // The quote card renders this text too, so it needs its own resolved links.
+    links: tweetLinks(quoted, null),
   };
 }
 
@@ -101,24 +176,16 @@ export function parseOfficialBookmarkPage(payload: unknown): ParsedTimelinePage 
     }
     const author = users.get(asString(tweet.author_id) ?? '');
     const authorHandle = asString(author?.username) ?? '';
-    const attachmentKeys = Array.isArray(asObject(tweet.attachments)?.media_keys)
-      ? (asObject(tweet.attachments)?.media_keys as unknown[])
-          .map(asString)
-          .filter(Boolean) as string[]
-      : [];
-    const mediaItems = attachmentKeys
-      .map((key) => media.get(key))
-      .filter(Boolean)
-      .map((item) => ({
-        media_key: asString(item?.media_key),
-        type: asString(item?.type),
-        url: asString(item?.url),
-        preview_image_url: asString(item?.preview_image_url),
-      }));
-    const mediaUrls = [...new Set(mediaItems.map((item) => item.url ?? item.preview_image_url).filter(Boolean))] as string[];
+    const mediaItems = mediaFor(tweet, media);
+    const mediaUrls = [
+      ...new Set(mediaItems.map((item) => item.url ?? item.preview_image_url).filter(Boolean)),
+    ] as string[];
     const createdAt = asString(tweet.created_at);
     const createdAtMs = createdAt ? Date.parse(createdAt) : Number.NaN;
-    const quote = quotedTweet(tweet, includedTweets, users, media);
+    const quotedId = quotedTweetId(tweet);
+    const quote = quotedTweet(quotedId, includedTweets, users, media);
+    const links = tweetLinks(tweet, quotedId);
+    const metrics = asObject(tweet.public_metrics);
 
     bookmarks.push({
       tweetId,
@@ -133,6 +200,14 @@ export function parseOfficialBookmarkPage(payload: unknown): ParsedTimelinePage 
       mediaMetadata: mediaItems.length > 0 ? JSON.stringify(mediaItems) : null,
       quotedTweet: quote ? JSON.stringify(quote) : null,
       tweetCreatedAt: Number.isFinite(createdAtMs) ? Math.floor(createdAtMs / 1000) : null,
+      links: links.length > 0 ? JSON.stringify(links) : null,
+      conversationId: asString(tweet.conversation_id),
+      likeCount: asCount(metrics?.like_count),
+      replyCount: asCount(metrics?.reply_count),
+      retweetCount: asCount(metrics?.retweet_count),
+      quoteCount: asCount(metrics?.quote_count),
+      bookmarkCount: asCount(metrics?.bookmark_count),
+      impressionCount: asCount(metrics?.impression_count),
     });
   }
 

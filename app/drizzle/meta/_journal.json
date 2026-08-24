@@ -50,6 +50,13 @@
       "when": 1787234847301,
       "tag": "0006_worried_wolf_cub",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1787584512799,
+      "tag": "0007_early_bloodstrike",
+      "breakpoints": true
     }
   ]
 }

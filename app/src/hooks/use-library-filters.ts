@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { normalizeHandle } from '@/lib/x-handle';
 
 export type TagMode = 'all' | 'any';
 
@@ -9,10 +10,11 @@ export const SORT_LABELS: Record<string, string> = {
   bookmarked_at_desc: 'Newest',
   bookmarked_at_asc: 'Oldest',
   author_asc: 'Author A–Z',
+  likes_desc: 'Most liked',
 };
 
 /** Keys that reset pagination when they change. */
-const FILTER_KEYS = ['search', 'folder_id', 'tags', 'tag', 'tag_mode'] as const;
+const FILTER_KEYS = ['search', 'folder_id', 'tags', 'tag', 'tag_mode', 'author'] as const;
 
 /**
  * The reader is opened with a history push so the platform back gesture closes
@@ -46,6 +48,7 @@ export function useLibraryFilters() {
   const sort = searchParams.get('sort') ?? 'bookmarked_at_desc';
   const rawPage = searchParams.get('page');
   const page = rawPage && /^\d+$/.test(rawPage) ? Math.max(1, Number(rawPage)) : 1;
+  const author = normalizeHandle(searchParams.get('author')) ?? '';
   const rawPostId = searchParams.get('post');
   const postId = rawPostId && /^\d+$/.test(rawPostId) ? Number(rawPostId) : null;
 
@@ -89,15 +92,34 @@ export function useLibraryFilters() {
     [write],
   );
 
+  const setAuthor = useCallback(
+    (handle: string | null) =>
+      write((params) => {
+        const normalized = handle === null ? null : normalizeHandle(handle);
+        if (normalized) params.set('author', normalized);
+        else params.delete('author');
+      }),
+    [write],
+  );
+
+  /**
+   * Everything that narrows the result set, in one string. The selection resets
+   * on it and the grid keys its remembered scroll position off it plus the page,
+   * so a new facet only has to be added to `FILTER_KEYS` to be accounted for.
+   */
+  const filterSignature = FILTER_KEYS.map((key) => searchParams.getAll(key).join('|')).join('\u0000');
+
   return {
     search,
     folderId,
+    filterSignature,
     tags,
     tagMode,
+    author,
     sort,
     page,
     postId,
-    hasFilters: Boolean(search || folderId || tags.length > 0),
+    hasFilters: Boolean(search || folderId || tags.length > 0 || author),
 
     setSearch: useCallback(
       (value: string) =>
@@ -118,6 +140,14 @@ export function useLibraryFilters() {
     ),
 
     setTags,
+
+    setAuthor,
+
+    /** Clicking the handle you are already filtered to takes the filter off again. */
+    toggleAuthor: useCallback(
+      (handle: string) => setAuthor(author === handle ? null : handle),
+      [author, setAuthor],
+    ),
 
     toggleTag: useCallback(
       (name: string) =>
@@ -172,6 +202,20 @@ export function useLibraryFilters() {
           preserveScroll: true,
         });
       },
+      [write],
+    ),
+
+    /**
+     * Stepping between posts inside the reader replaces the entry rather than
+     * pushing one, so a single back gesture still returns to the grid instead
+     * of walking back through everything you paged past.
+     */
+    replacePost: useCallback(
+      (id: number) =>
+        write((params) => params.set('post', String(id)), {
+          keepPage: true,
+          preserveScroll: true,
+        }),
       [write],
     ),
 

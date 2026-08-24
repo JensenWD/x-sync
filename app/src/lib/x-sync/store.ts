@@ -216,9 +216,11 @@ export class BookmarkSyncStore {
         INSERT INTO bookmarks
           (tweet_id, full_text, author_name, author_handle, author_avatar,
            tweet_url, media_urls, media_metadata, quoted_tweet, bookmarked_at, synced_at,
+           links, conversation_id, like_count, reply_count, retweet_count,
+           quote_count, bookmark_count, impression_count,
            remote_present, removed_from_x_at,
            created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, unixepoch(), unixepoch())
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, unixepoch(), unixepoch())
         ON CONFLICT(tweet_id) DO UPDATE SET
           full_text = excluded.full_text,
           author_name = excluded.author_name,
@@ -230,6 +232,16 @@ export class BookmarkSyncStore {
           quoted_tweet = excluded.quoted_tweet,
           bookmarked_at = excluded.bookmarked_at,
           synced_at = excluded.synced_at,
+          -- COALESCE, not overwrite: an ingestion front-end that cannot supply
+          -- these (the parked extension) must not erase what X already gave us.
+          links = COALESCE(excluded.links, bookmarks.links),
+          conversation_id = COALESCE(excluded.conversation_id, bookmarks.conversation_id),
+          like_count = COALESCE(excluded.like_count, bookmarks.like_count),
+          reply_count = COALESCE(excluded.reply_count, bookmarks.reply_count),
+          retweet_count = COALESCE(excluded.retweet_count, bookmarks.retweet_count),
+          quote_count = COALESCE(excluded.quote_count, bookmarks.quote_count),
+          bookmark_count = COALESCE(excluded.bookmark_count, bookmarks.bookmark_count),
+          impression_count = COALESCE(excluded.impression_count, bookmarks.impression_count),
           remote_present = 1,
           removed_from_x_at = NULL,
           updated_at = unixepoch()
@@ -248,6 +260,14 @@ export class BookmarkSyncStore {
           item.quotedTweet,
           item.tweetCreatedAt,
           now,
+          item.links ?? null,
+          item.conversationId ?? null,
+          item.likeCount ?? null,
+          item.replyCount ?? null,
+          item.retweetCount ?? null,
+          item.quoteCount ?? null,
+          item.bookmarkCount ?? null,
+          item.impressionCount ?? null,
         );
       }
 

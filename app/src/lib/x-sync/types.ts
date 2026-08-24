@@ -6,6 +6,21 @@ export interface ReconciliationConfirmation {
   observed_count: number;
 }
 
+/**
+ * One `t.co` link found in a post, resolved back to where it actually points.
+ * `kind` separates real outbound links from the two `t.co`s X appends for its
+ * own attachments, which the reader renders as a media block or a quote card
+ * rather than as link text.
+ */
+export interface XBookmarkLink {
+  url: string;
+  expanded_url: string | null;
+  display_url: string | null;
+  title: string | null;
+  description: string | null;
+  kind: 'link' | 'media' | 'quote';
+}
+
 export interface XBookmarkRecord {
   tweetId: string;
   fullText: string;
@@ -17,6 +32,15 @@ export interface XBookmarkRecord {
   mediaMetadata: string | null;
   quotedTweet: string | null;
   tweetCreatedAt: number | null;
+  /** Serialized `XBookmarkLink[]`. Optional so the parked extension parser still type-checks. */
+  links?: string | null;
+  conversationId?: string | null;
+  likeCount?: number | null;
+  replyCount?: number | null;
+  retweetCount?: number | null;
+  quoteCount?: number | null;
+  bookmarkCount?: number | null;
+  impressionCount?: number | null;
 }
 
 export interface ParsedTimelinePage {

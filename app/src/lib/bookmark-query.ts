@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
 import { bookmarkContentHash, libraryRevision } from './bookmark-content';
+import { searchTokens } from './search-tokens';
 
 export const BOOKMARK_QUERY_MAX_LIMIT = 100;
 export const BOOKMARK_QUERY_DEFAULT_LIMIT = 25;
@@ -450,10 +451,6 @@ export function normalizeBookmarkQuery(input: BookmarkQueryInput): NormalizedBoo
         ? 0
         : integerValue(input.offset, 'offset', 0, 1_000_000),
   };
-}
-
-function searchTokens(query: string) {
-  return query.normalize('NFKC').match(/[\p{L}\p{N}_]+/gu)?.slice(0, 32) ?? [];
 }
 
 function ftsQuery(query: string, mode: BookmarkSearchMode) {

@@ -1,31 +1,70 @@
 'use client';
 
+import { useCallback, useMemo } from 'react';
 import type { UseQueryResult } from '@tanstack/react-query';
 import { BookmarkXIcon } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { BookmarkCard } from './bookmark-card';
 import { useLibraryFilters } from '@/hooks/use-library-filters';
+import { useGridKeyboard } from '@/hooks/use-grid-keyboard';
 import { useLibraryScroll } from '@/hooks/use-library-scroll';
 import { cn } from '@/lib/utils';
+import { searchTokens } from '@/lib/search-tokens';
+import type { Selection } from '@/hooks/use-selection';
 import type { BookmarksResponse } from '@/types';
 
 /**
  * The reading surface: balanced masonry columns on desktop (2a), a single
  * column on a phone (3a). Cards never split across a column break.
  */
-export function BookmarkGrid({ query }: { query: UseQueryResult<BookmarksResponse> }) {
-  const { search, folderId, tags, tagMode, sort, hasFilters, page, postId, setPage } =
+export function BookmarkGrid({
+  query,
+  selection,
+}: {
+  query: UseQueryResult<BookmarksResponse>;
+  selection: Selection;
+}) {
+  const { search, hasFilters, page, postId, filterSignature, setPage, openPost } =
     useLibraryFilters();
   const { data, isLoading, isFetching } = query;
-  const bookmarks = data?.data ?? [];
+  const bookmarks = useMemo(() => data?.data ?? [], [data]);
   const meta = data?.meta;
-  const viewKey = JSON.stringify({ search, folderId, tags, tagMode, sort, page });
+  const viewKey = `${filterSignature} ${page}`;
   const contentVersion = `${meta?.total ?? 0}:${bookmarks.map((bookmark) => bookmark.id).join(',')}`;
   const { scrollRef, rememberScroll } = useLibraryScroll(
     viewKey,
     postId !== null,
     contentVersion,
   );
+  const tokens = useMemo(() => searchTokens(search), [search]);
+
+  // The keyboard hook works in positions; the selection works in ids.
+  const atIndex = useCallback(
+    (index: number, act: (id: number) => void) => {
+      const bookmark = bookmarks[index];
+      if (bookmark) act(bookmark.id);
+    },
+    [bookmarks],
+  );
+  const openAt = useCallback((index: number) => atIndex(index, openPost), [atIndex, openPost]);
+  const toggleAt = useCallback(
+    (index: number) => atIndex(index, selection.toggle),
+    [atIndex, selection.toggle],
+  );
+  const extendAt = useCallback(
+    (index: number) => atIndex(index, selection.extendTo),
+    [atIndex, selection.extendTo],
+  );
+
+  useGridKeyboard({
+    container: scrollRef,
+    count: bookmarks.length,
+    enabled: postId === null,
+    onOpen: openAt,
+    onToggleSelect: toggleAt,
+    onExtendSelect: extendAt,
+    onClear: selection.exit,
+  });
 
   const columns =
     'columns-1 gap-x-5 md:columns-2 xl:columns-3 [&>*]:mb-3.5 md:[&>*]:mb-5 [&>*]:break-inside-avoid';
@@ -58,8 +97,17 @@ export function BookmarkGrid({ query }: { query: UseQueryResult<BookmarksRespons
       ) : (
         <>
           <div className={cn(columns, isFetching && 'opacity-70 transition-opacity')}>
-            {bookmarks.map((bookmark) => (
-              <BookmarkCard key={bookmark.id} bookmark={bookmark} />
+            {bookmarks.map((bookmark, index) => (
+              <BookmarkCard
+                key={bookmark.id}
+                bookmark={bookmark}
+                index={index}
+                tokens={tokens}
+                selected={selection.selected.has(bookmark.id)}
+                selectVisible={selection.visible}
+                onToggleSelect={selection.toggle}
+                onExtendSelect={selection.extendTo}
+              />
             ))}
           </div>
 

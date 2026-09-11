@@ -1,4 +1,11 @@
-import type { Bookmark, PostLink, PostMediaItem, QuotedTweet } from '@/types';
+import type {
+  Bookmark,
+  CommunityNote,
+  PostLink,
+  PostMediaItem,
+  ReferencedTweet,
+} from '@/types';
+import { communityNotesJsonSql } from '@/lib/community-notes/query';
 
 /**
  * The bookmark shape the dashboard routes return. The list and the detail route
@@ -12,9 +19,19 @@ import type { Bookmark, PostLink, PostMediaItem, QuotedTweet } from '@/types';
 export const DASHBOARD_BOOKMARK_COLUMNS = `
     b.id, b.tweet_id, b.full_text, b.author_name, b.author_handle,
     b.author_avatar, b.tweet_url, b.media_urls, b.media_metadata, b.quoted_tweet,
+    b.replied_to_tweet, b.matched_media_notes,
     b.links, b.conversation_id, b.like_count, b.reply_count, b.retweet_count,
     b.quote_count, b.bookmark_count, b.impression_count,
     b.bookmarked_at, b.created_at,
+    ${communityNotesJsonSql('b.tweet_id', 'b.matched_media_notes')} AS community_notes_json,
+    ${communityNotesJsonSql(
+      "json_extract(b.quoted_tweet, '$.tweet_id')",
+      "json_extract(b.quoted_tweet, '$.matched_media_notes')",
+    )} AS quoted_community_notes_json,
+    ${communityNotesJsonSql(
+      "json_extract(b.replied_to_tweet, '$.tweet_id')",
+      "json_extract(b.replied_to_tweet, '$.matched_media_notes')",
+    )} AS replied_to_community_notes_json,
     COALESCE((
       SELECT json_group_array(json_object('id', f.id, 'name', f.name, 'color', f.color))
       FROM bookmark_folders bf
@@ -39,6 +56,8 @@ export interface DashboardBookmarkRow {
   media_urls: string | null;
   media_metadata: string | null;
   quoted_tweet: string | null;
+  replied_to_tweet: string | null;
+  matched_media_notes: string | null;
   links: string | null;
   conversation_id: string | null;
   like_count: number | null;
@@ -49,6 +68,9 @@ export interface DashboardBookmarkRow {
   impression_count: number | null;
   bookmarked_at: number | null;
   created_at: number;
+  community_notes_json: string;
+  quoted_community_notes_json: string;
+  replied_to_community_notes_json: string;
   folders_json: string;
   tags_json: string;
 }
@@ -154,20 +176,48 @@ export function stripAttachmentLinks(fullText: string, links: PostLink[]): strin
     .trim();
 }
 
-function parseQuotedTweet(value: string | null): QuotedTweet | null {
-  const quote = object(parseJson(value));
-  if (!quote) return null;
-  const fullText = text(quote.full_text) ?? '';
-  const links = parseLinks(objects(quote.links));
+function parseCommunityNotes(value: string | null): CommunityNote[] {
+  return objects(parseJson(value))
+    .filter((note) => typeof note.note_id === 'string' && typeof note.summary === 'string')
+    .map((note) => ({
+      note_id: note.note_id as string,
+      tweet_id: text(note.tweet_id) ?? '',
+      summary: note.summary as string,
+      classification: text(note.classification),
+      trustworthy_sources:
+        note.trustworthy_sources === 1 || note.trustworthy_sources === true
+          ? true
+          : note.trustworthy_sources === 0 || note.trustworthy_sources === false
+            ? false
+            : null,
+      is_media_note: note.is_media_note === 1 || note.is_media_note === true,
+      is_collaborative_note:
+        note.is_collaborative_note === 1 || note.is_collaborative_note === true,
+      current_status: 'CURRENTLY_RATED_HELPFUL' as const,
+      created_at: positive(note.created_at),
+      status_updated_at: positive(note.status_updated_at),
+      source_snapshot_date: text(note.source_snapshot_date) ?? '',
+    }));
+}
+
+function parseReferencedTweet(
+  value: string | null,
+  communityNotesJson: string,
+): ReferencedTweet | null {
+  const reference = object(parseJson(value));
+  if (!reference) return null;
+  const fullText = text(reference.full_text) ?? '';
+  const links = parseLinks(objects(reference.links));
   return {
-    tweet_id: text(quote.tweet_id) ?? '',
+    tweet_id: text(reference.tweet_id) ?? '',
     full_text: fullText,
     body: stripAttachmentLinks(fullText, links),
-    author_name: text(quote.author_name) ?? '',
-    author_handle: text(quote.author_handle) ?? '',
-    author_avatar: text(quote.author_avatar),
-    media: mediaItems(objects(quote.media)),
+    author_name: text(reference.author_name) ?? '',
+    author_handle: text(reference.author_handle) ?? '',
+    author_avatar: text(reference.author_avatar),
+    media: mediaItems(objects(reference.media)),
     links,
+    community_notes: parseCommunityNotes(communityNotesJson),
   };
 }
 
@@ -184,7 +234,12 @@ export function parseDashboardBookmark(row: DashboardBookmarkRow): Bookmark {
     tweet_url: row.tweet_url,
     media: parseMedia(row),
     links,
-    quoted_tweet: parseQuotedTweet(row.quoted_tweet),
+    quoted_tweet: parseReferencedTweet(row.quoted_tweet, row.quoted_community_notes_json),
+    replied_to_tweet: parseReferencedTweet(
+      row.replied_to_tweet,
+      row.replied_to_community_notes_json,
+    ),
+    community_notes: parseCommunityNotes(row.community_notes_json),
     conversation_id: row.conversation_id,
     metrics: {
       like_count: row.like_count,

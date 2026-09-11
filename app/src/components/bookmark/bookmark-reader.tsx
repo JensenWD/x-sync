@@ -18,6 +18,8 @@ import { AuthorHandle, PostAvatar } from './bookmark-card';
 import { ReaderMedia } from './post-media';
 import { PostMetrics } from './post-metrics';
 import { PostText } from './post-text';
+import { CommunityNotes } from './community-note';
+import { ReferencedPost } from './referenced-post';
 import { useBookmark, useDeleteBookmark } from '@/hooks/use-bookmarks';
 import { useLibraryFilters } from '@/hooks/use-library-filters';
 import { ownsKeystroke } from '@/lib/keyboard';
@@ -234,24 +236,24 @@ export function BookmarkReader({ orderedIds = [] }: { orderedIds?: number[] }) {
                 </p>
               ))}
 
+              <CommunityNotes notes={bookmark.community_notes} tokens={tokens} />
+
+              {bookmark.replied_to_tweet && (
+                <ReferencedPost
+                  post={bookmark.replied_to_tweet}
+                  label="Replying to"
+                  compact={false}
+                  tokens={tokens}
+                />
+              )}
+
               {bookmark.quoted_tweet && (
-                <div className="rounded-xl border border-card-border bg-card p-4">
-                  <div className="mb-1.5 flex items-baseline gap-2">
-                    <span className="text-[13px] font-medium text-text-primary">
-                      {bookmark.quoted_tweet.author_name}
-                    </span>
-                    <span className="font-mono text-[12px] text-muted-foreground">
-                      @{bookmark.quoted_tweet.author_handle}
-                    </span>
-                  </div>
-                  <p className="font-serif text-[17px] leading-[1.5] whitespace-pre-wrap text-[#9a9aa0]">
-                    <PostText
-                      text={bookmark.quoted_tweet.body}
-                      links={bookmark.quoted_tweet.links}
-                      tokens={tokens}
-                    />
-                  </p>
-                </div>
+                <ReferencedPost
+                  post={bookmark.quoted_tweet}
+                  label="Quoted post"
+                  compact={false}
+                  tokens={tokens}
+                />
               )}
 
               <ReaderMedia items={bookmark.media} />

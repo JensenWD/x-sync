@@ -22,6 +22,8 @@ function createDatabase() {
       media_urls TEXT,
       media_metadata TEXT,
       quoted_tweet TEXT,
+      replied_to_tweet TEXT,
+      matched_media_notes TEXT,
       bookmarked_at INTEGER,
       synced_at INTEGER,
       remote_present INTEGER NOT NULL DEFAULT 1,
@@ -90,6 +92,21 @@ function createDatabase() {
       prompt_version TEXT,
       processed_at INTEGER,
       updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE community_notes (
+      note_id TEXT PRIMARY KEY,
+      tweet_id TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      classification TEXT,
+      trustworthy_sources INTEGER,
+      is_media_note INTEGER NOT NULL DEFAULT 0,
+      is_collaborative_note INTEGER NOT NULL DEFAULT 0,
+      current_status TEXT NOT NULL,
+      note_created_at INTEGER,
+      status_updated_at INTEGER,
+      source_snapshot_date TEXT NOT NULL,
+      created_at INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL DEFAULT 0
     );
     CREATE TRIGGER library_revision_bookmark_tags_ai AFTER INSERT ON bookmark_tags BEGIN
       UPDATE library_revision_state SET revision = revision + 1 WHERE id = 1;

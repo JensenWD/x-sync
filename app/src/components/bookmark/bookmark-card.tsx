@@ -8,6 +8,8 @@ import { useLibraryFilters } from '@/hooks/use-library-filters';
 import { CardMedia } from './post-media';
 import { PostMetrics } from './post-metrics';
 import { PostText } from './post-text';
+import { CommunityNotes } from './community-note';
+import { ReferencedPost } from './referenced-post';
 import type { Bookmark } from '@/types';
 
 export function PostAvatar({
@@ -200,25 +202,24 @@ export const BookmarkCard = memo(function BookmarkCard({
         </p>
       )}
 
+      <CommunityNotes
+        notes={bookmark.community_notes}
+        compact
+        tokens={tokens}
+        stopPropagation
+      />
+
+      {bookmark.replied_to_tweet && (
+        <ReferencedPost
+          post={bookmark.replied_to_tweet}
+          label="Replying to"
+          compact
+          tokens={tokens}
+        />
+      )}
+
       {bookmark.quoted_tweet && (
-        <div className="rounded-lg border border-card-border bg-[#101012] p-3">
-          <div className="mb-1 flex items-baseline gap-1.5">
-            <span className="truncate text-[12px] font-medium text-text-secondary">
-              {bookmark.quoted_tweet.author_name}
-            </span>
-            <span className="truncate font-mono text-[11px] text-text-faint">
-              @{bookmark.quoted_tweet.author_handle}
-            </span>
-          </div>
-          <p className="line-clamp-3 font-serif text-[15px] leading-[1.5] text-[#9a9aa0]">
-            <PostText
-              text={bookmark.quoted_tweet.body}
-              links={bookmark.quoted_tweet.links}
-              tokens={tokens}
-              stopPropagation
-            />
-          </p>
-        </div>
+        <ReferencedPost post={bookmark.quoted_tweet} label="Quoted post" compact tokens={tokens} />
       )}
 
       <CardMedia items={bookmark.media} />

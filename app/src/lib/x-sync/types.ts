@@ -31,6 +31,8 @@ export interface XBookmarkRecord {
   mediaUrls: string | null;
   mediaMetadata: string | null;
   quotedTweet: string | null;
+  repliedToTweet?: string | null;
+  matchedMediaNotes?: string | null;
   tweetCreatedAt: number | null;
   /** Serialized `XBookmarkLink[]`. Optional so the parked extension parser still type-checks. */
   links?: string | null;
@@ -80,6 +82,15 @@ export interface SyncResult extends SyncRunSummary {
     tagged: number;
     assignments: number;
     model: string | null;
+    error: string | null;
+  };
+  community_notes?: {
+    status: 'success' | 'skipped' | 'failed';
+    snapshot_date: string | null;
+    notes_imported: number;
+    helpful_notes: number;
+    downloaded_files: number;
+    reused_files: number;
     error: string | null;
   };
 }

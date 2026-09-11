@@ -31,6 +31,8 @@ export const bookmarks = sqliteTable(
     mediaUrls: text('media_urls'), // JSON array
     mediaMetadata: text('media_metadata'), // JSON array with type/key/url/size/playback metadata
     quotedTweet: text('quoted_tweet'), // JSON object
+    repliedToTweet: text('replied_to_tweet'), // JSON object
+    matchedMediaNotes: text('matched_media_notes'), // JSON array of Community Note IDs from X
     links: text('links'), // JSON array of resolved t.co entities
     conversationId: text('conversation_id'), // Thread the post belongs to
     // Public metrics ride the same bookmark request, so they cost nothing extra.
@@ -332,3 +334,44 @@ export const bookmarkEnrichments = sqliteTable(
   },
   (t) => [index('bookmark_enrichments_status_idx').on(t.status, t.updatedAt)],
 );
+
+/**
+ * Only notes relevant to this local bookmark library are retained. The public
+ * X snapshot is the source of truth and this table is replaced transactionally
+ * when a newer verified snapshot (or a changed tracked-ID set) is imported.
+ */
+export const communityNotes = sqliteTable(
+  'community_notes',
+  {
+    noteId: text('note_id').primaryKey(),
+    tweetId: text('tweet_id').notNull(),
+    summary: text('summary').notNull(),
+    classification: text('classification'),
+    trustworthySources: integer('trustworthy_sources', { mode: 'boolean' }),
+    isMediaNote: integer('is_media_note', { mode: 'boolean' }).notNull().default(false),
+    isCollaborativeNote: integer('is_collaborative_note', { mode: 'boolean' })
+      .notNull()
+      .default(false),
+    currentStatus: text('current_status').notNull().default('NEEDS_MORE_RATINGS'),
+    noteCreatedAt: integer('note_created_at'),
+    statusUpdatedAt: integer('status_updated_at'),
+    sourceSnapshotDate: text('source_snapshot_date').notNull(),
+    ...timestamps,
+  },
+  (t) => [
+    index('community_notes_tweet_status_idx').on(t.tweetId, t.currentStatus),
+    index('community_notes_status_idx').on(t.currentStatus),
+  ],
+);
+
+export const communityNotesState = sqliteTable('community_notes_state', {
+  id: integer('id').primaryKey(),
+  snapshotDate: text('snapshot_date'),
+  lastCheckedAt: integer('last_checked_at'),
+  lastRefreshedAt: integer('last_refreshed_at'),
+  trackedHash: text('tracked_hash'),
+  notesImported: integer('notes_imported').notNull().default(0),
+  helpfulNotes: integer('helpful_notes').notNull().default(0),
+  lastError: text('last_error'),
+  updatedAt: integer('updated_at').notNull().default(sql`(unixepoch())`),
+});

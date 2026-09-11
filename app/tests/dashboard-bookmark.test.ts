@@ -17,6 +17,8 @@ function row(overrides: Partial<DashboardBookmarkRow> = {}): DashboardBookmarkRo
     media_urls: null,
     media_metadata: null,
     quoted_tweet: null,
+    replied_to_tweet: null,
+    matched_media_notes: null,
     links: null,
     conversation_id: null,
     like_count: null,
@@ -27,6 +29,9 @@ function row(overrides: Partial<DashboardBookmarkRow> = {}): DashboardBookmarkRo
     impression_count: null,
     bookmarked_at: null,
     created_at: 0,
+    community_notes_json: '[]',
+    quoted_community_notes_json: '[]',
+    replied_to_community_notes_json: '[]',
     folders_json: '[]',
     tags_json: '[]',
     ...overrides,
@@ -130,6 +135,37 @@ test('a quoted post is decoded as thoroughly as the post quoting it', () => {
   assert.equal(quote.links.length, 1);
   assert.equal(quote.media[0].width, 800);
   assert.equal(quote.media[0].preview_url, 'q.jpg');
+  assert.deepEqual(quote.community_notes, []);
+});
+
+test('decodes reply context and Helpful Community Notes for both levels', () => {
+  const note = {
+    note_id: '900',
+    tweet_id: '100',
+    summary: 'Useful context',
+    current_status: 'CURRENTLY_RATED_HELPFUL',
+    is_media_note: 0,
+    is_collaborative_note: 0,
+    source_snapshot_date: '2026/08/26',
+  };
+  const parsed = parseDashboardBookmark(
+    row({
+      replied_to_tweet: JSON.stringify({
+        tweet_id: '300',
+        full_text: 'parent',
+        author_name: 'Parent',
+        author_handle: 'parent',
+      }),
+      community_notes_json: JSON.stringify([note]),
+      replied_to_community_notes_json: JSON.stringify([
+        { ...note, note_id: '901', tweet_id: '300', summary: 'Parent context' },
+      ]),
+    }),
+  );
+
+  assert.equal(parsed.community_notes[0].summary, 'Useful context');
+  assert.equal(parsed.replied_to_tweet?.body, 'parent');
+  assert.equal(parsed.replied_to_tweet?.community_notes[0].summary, 'Parent context');
 });
 
 test('keeps a real zero metric distinct from a never-observed one', () => {

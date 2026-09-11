@@ -1,6 +1,10 @@
 import type Database from 'better-sqlite3';
 import { createHash } from 'node:crypto';
-import { bookmarkContentHash, libraryRevision } from './bookmark-content';
+import {
+  bookmarkContentHash,
+  bookmarkContentSelectSql,
+  libraryRevision,
+} from './bookmark-content';
 import { AgentContractError } from './agent-taxonomy';
 import { queryBookmarks, type BookmarkQueryInput } from './bookmark-query';
 
@@ -92,9 +96,8 @@ function embedding(value: unknown, field = 'embedding') {
 function bookmarkForHash(sqlite: Database.Database, bookmarkId: number) {
   return sqlite
     .prepare(
-      `SELECT tweet_id, full_text, author_name, author_handle, tweet_url,
-              media_urls, media_metadata, quoted_tweet
-       FROM bookmarks WHERE id = ?`,
+      `SELECT ${bookmarkContentSelectSql('b')}
+       FROM bookmarks b WHERE b.id = ?`,
     )
     .get(bookmarkId) as Parameters<typeof bookmarkContentHash>[0] | undefined;
 }

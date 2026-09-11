@@ -91,8 +91,54 @@ test('parses official bookmarks with author, media, quote, and pagination data',
     tweet_url: 'https://x.com/quoted/status/200',
     created_at: '2026-08-19T05:00:00.000Z',
     media: [],
+    matched_media_notes: [],
     links: [],
   });
+});
+
+test('captures a true reply parent and Community Note media matches from the same page', () => {
+  const page = parseOfficialBookmarkPage({
+    data: [
+      {
+        id: '100',
+        text: 'this is a reply',
+        author_id: '10',
+        referenced_tweets: [{ type: 'replied_to', id: '300' }],
+        matched_media_notes: [{ note_id: '900', match_status: 'MATCHED' }],
+      },
+    ],
+    includes: {
+      users: [
+        { id: '10', name: 'Reply', username: 'reply' },
+        { id: '30', name: 'Parent', username: 'parent' },
+      ],
+      tweets: [
+        {
+          id: '300',
+          text: 'full parent context',
+          author_id: '30',
+          matched_media_notes: [{ note_id: '901', match_status: 'MATCHED' }],
+        },
+      ],
+    },
+  });
+
+  assert.equal(page.bookmarks[0].quotedTweet, null);
+  assert.deepEqual(JSON.parse(page.bookmarks[0].repliedToTweet ?? '{}'), {
+    tweet_id: '300',
+    full_text: 'full parent context',
+    author_name: 'Parent',
+    author_handle: 'parent',
+    author_avatar: null,
+    tweet_url: 'https://x.com/parent/status/300',
+    created_at: null,
+    media: [],
+    matched_media_notes: [{ note_id: '901', match_status: 'MATCHED' }],
+    links: [],
+  });
+  assert.deepEqual(JSON.parse(page.bookmarks[0].matchedMediaNotes ?? '[]'), [
+    { note_id: '900', match_status: 'MATCHED' },
+  ]);
 });
 
 test('captures public metrics from the same bookmark request', () => {

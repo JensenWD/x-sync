@@ -91,7 +91,7 @@ export function resolveSyncMode(
 }
 
 export function shouldStopIncremental(consecutiveKnownPages: number) {
-  return consecutiveKnownPages >= 2;
+  return consecutiveKnownPages >= 1;
 }
 
 function cursorKey(cursor: string | null) {
@@ -215,12 +215,13 @@ export class BookmarkSyncStore {
       const upsert = this.sqlite.prepare(`
         INSERT INTO bookmarks
           (tweet_id, full_text, author_name, author_handle, author_avatar,
-           tweet_url, media_urls, media_metadata, quoted_tweet, bookmarked_at, synced_at,
+           tweet_url, media_urls, media_metadata, quoted_tweet, replied_to_tweet,
+           matched_media_notes, bookmarked_at, synced_at,
            links, conversation_id, like_count, reply_count, retweet_count,
            quote_count, bookmark_count, impression_count,
            remote_present, removed_from_x_at,
            created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, unixepoch(), unixepoch())
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, unixepoch(), unixepoch())
         ON CONFLICT(tweet_id) DO UPDATE SET
           full_text = excluded.full_text,
           author_name = excluded.author_name,
@@ -230,6 +231,8 @@ export class BookmarkSyncStore {
           media_urls = excluded.media_urls,
           media_metadata = excluded.media_metadata,
           quoted_tweet = excluded.quoted_tweet,
+          replied_to_tweet = excluded.replied_to_tweet,
+          matched_media_notes = excluded.matched_media_notes,
           bookmarked_at = excluded.bookmarked_at,
           synced_at = excluded.synced_at,
           -- COALESCE, not overwrite: an ingestion front-end that cannot supply
@@ -258,6 +261,8 @@ export class BookmarkSyncStore {
           item.mediaUrls,
           item.mediaMetadata,
           item.quotedTweet,
+          item.repliedToTweet ?? null,
+          item.matchedMediaNotes ?? null,
           item.tweetCreatedAt,
           now,
           item.links ?? null,

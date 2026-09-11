@@ -27,7 +27,13 @@ test('takes every field the same bookmark request can carry for free', () => {
 
   // Widening the field set costs no extra call and no extra rate limit, so
   // anything the dashboard can use should already be on the wire.
-  for (const field of ['entities', 'public_metrics', 'conversation_id', 'note_tweet']) {
+  for (const field of [
+    'entities',
+    'public_metrics',
+    'conversation_id',
+    'note_tweet',
+    'matched_media_notes',
+  ]) {
     assert.ok(tweetFields.includes(field), `expected tweet.fields to request ${field}`);
   }
   for (const field of ['variants', 'width', 'height', 'duration_ms', 'alt_text']) {

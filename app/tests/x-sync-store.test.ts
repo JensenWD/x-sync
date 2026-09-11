@@ -25,6 +25,8 @@ function createDatabase() {
       media_urls TEXT,
       media_metadata TEXT,
       quoted_tweet TEXT,
+      replied_to_tweet TEXT,
+      matched_media_notes TEXT,
       links TEXT,
       conversation_id TEXT,
       like_count INTEGER,
@@ -132,9 +134,9 @@ test('auto mode chooses full initially, incremental while fresh, and full when s
   assert.equal(resolveSyncMode('full', 10, 900, 1_000), 'full');
 });
 
-test('incremental sync stops only after two known pages', () => {
-  assert.equal(shouldStopIncremental(1), false);
-  assert.equal(shouldStopIncremental(2), true);
+test('incremental sync stops after one known page', () => {
+  assert.equal(shouldStopIncremental(0), false);
+  assert.equal(shouldStopIncremental(1), true);
 });
 
 test('a durable running row prevents concurrent syncs', () => {

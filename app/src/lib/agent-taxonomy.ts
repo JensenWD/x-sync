@@ -1,6 +1,10 @@
 import type Database from 'better-sqlite3';
 import { createHash } from 'node:crypto';
-import { bookmarkContentHash, libraryRevision } from './bookmark-content';
+import {
+  bookmarkContentHash,
+  bookmarkContentSelectSql,
+  libraryRevision,
+} from './bookmark-content';
 
 const MAX_BATCH = 200;
 const KINDS = new Set(['tag', 'folder']);
@@ -108,9 +112,8 @@ function idList(value: unknown, field: string) {
 function currentBookmark(sqlite: Database.Database, bookmarkId: number) {
   return sqlite
     .prepare(
-      `SELECT tweet_id, full_text, author_name, author_handle, tweet_url,
-              media_urls, media_metadata, quoted_tweet
-       FROM bookmarks WHERE id = ?`,
+      `SELECT ${bookmarkContentSelectSql('b')}
+       FROM bookmarks b WHERE b.id = ?`,
     )
     .get(bookmarkId) as
     | {
@@ -122,6 +125,10 @@ function currentBookmark(sqlite: Database.Database, bookmarkId: number) {
         media_urls: string | null;
         media_metadata: string | null;
         quoted_tweet: string | null;
+        replied_to_tweet: string | null;
+        community_notes_json: string;
+        quoted_community_notes_json: string;
+        replied_to_community_notes_json: string;
       }
     | undefined;
 }

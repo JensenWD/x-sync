@@ -52,6 +52,9 @@ const expectedTriggers = [
   'bookmark_enrichments_ai',
   'bookmark_enrichments_ad',
   'bookmark_enrichments_au',
+  'library_revision_community_notes_ai',
+  'library_revision_community_notes_ad',
+  'library_revision_community_notes_au',
 ];
 const installedTriggers = new Set(
   (sqlite.prepare("SELECT name FROM sqlite_master WHERE type = 'trigger'").all() as { name: string }[]).map(

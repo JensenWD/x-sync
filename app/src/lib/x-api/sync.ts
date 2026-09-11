@@ -17,6 +17,7 @@ import { fetchWithDeadline } from './fetch';
 import { createVerifiedDatabaseBackup } from '@/lib/db/backup';
 import { rawDb } from '@/lib/db/client';
 import { autoTagMissingBookmarks, failedAutoTagResult } from '@/lib/auto-tag';
+import { refreshCommunityNotes } from '@/lib/community-notes/cache';
 
 class XApiRequestError extends Error {
   constructor(
@@ -95,11 +96,29 @@ export async function syncOfficialBookmarks(
 
       const result = ingestParsedPage(run.id, cursor, page, reconciliationConfirmation);
       if (result.status === 'success') {
+        let communityNotes: Awaited<ReturnType<typeof refreshCommunityNotes>>;
+        try {
+          communityNotes = await refreshCommunityNotes(rawDb);
+        } catch (error) {
+          communityNotes = {
+            status: 'failed',
+            snapshot_date: null,
+            notes_imported: 0,
+            helpful_notes: 0,
+            downloaded_files: 0,
+            reused_files: 0,
+            error: error instanceof Error ? error.message : 'Community Notes refresh failed',
+          };
+        }
         try {
           const autoTag = await autoTagMissingBookmarks(rawDb);
-          return { ...result.run, auto_tag: autoTag };
+          return { ...result.run, auto_tag: autoTag, community_notes: communityNotes };
         } catch (error) {
-          return { ...result.run, auto_tag: failedAutoTagResult(error) };
+          return {
+            ...result.run,
+            auto_tag: failedAutoTagResult(error),
+            community_notes: communityNotes,
+          };
         }
       }
       cursor = result.cursor;

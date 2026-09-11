@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import Database from 'better-sqlite3';
-import { bookmarkContentHash } from '../src/lib/bookmark-content';
+import { bookmarkContentHash, bookmarkContentSelectSql } from '../src/lib/bookmark-content';
 import {
   applyTaxonomyProposals,
   createTaxonomyProposals,
@@ -20,7 +20,8 @@ function createDatabase() {
       full_text TEXT NOT NULL DEFAULT '', author_name TEXT NOT NULL DEFAULT '',
       author_handle TEXT NOT NULL DEFAULT '', author_avatar TEXT,
       tweet_url TEXT NOT NULL DEFAULT '', media_urls TEXT, media_metadata TEXT,
-      quoted_tweet TEXT, bookmarked_at INTEGER, synced_at INTEGER,
+      quoted_tweet TEXT, replied_to_tweet TEXT, matched_media_notes TEXT,
+      bookmarked_at INTEGER, synced_at INTEGER,
       remote_present INTEGER NOT NULL DEFAULT 1, removed_from_x_at INTEGER,
       hidden_at INTEGER, remote_order_run_id INTEGER, remote_order_position INTEGER,
       created_at INTEGER NOT NULL DEFAULT (unixepoch()), updated_at INTEGER NOT NULL DEFAULT (unixepoch())
@@ -86,6 +87,13 @@ function createDatabase() {
       error_message TEXT, processed_at INTEGER, created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
+    CREATE TABLE community_notes (
+      note_id TEXT PRIMARY KEY, tweet_id TEXT NOT NULL, summary TEXT NOT NULL,
+      classification TEXT, trustworthy_sources INTEGER, is_media_note INTEGER NOT NULL DEFAULT 0,
+      is_collaborative_note INTEGER NOT NULL DEFAULT 0, current_status TEXT NOT NULL,
+      note_created_at INTEGER, status_updated_at INTEGER, source_snapshot_date TEXT NOT NULL,
+      created_at INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL DEFAULT 0
+    );
     CREATE VIRTUAL TABLE bookmarks_fts USING fts5(
       full_text, author_name, author_handle, content='bookmarks', content_rowid='id'
     );
@@ -123,8 +131,7 @@ function createDatabase() {
 function contentHash(sqlite: Database.Database, bookmarkId: number) {
   const row = sqlite
     .prepare(
-      `SELECT tweet_id, full_text, author_name, author_handle, tweet_url,
-              media_urls, media_metadata, quoted_tweet FROM bookmarks WHERE id = ?`,
+      `SELECT ${bookmarkContentSelectSql('b')} FROM bookmarks b WHERE b.id = ?`,
     )
     .get(bookmarkId) as Parameters<typeof bookmarkContentHash>[0];
   return bookmarkContentHash(row);

@@ -217,7 +217,7 @@ export function SyncDialog({ open, onOpenChange }: SyncDialogProps) {
               </Button>
             )}
             <p className="text-xs text-muted-foreground">
-              New-only sync stops after two pages of known bookmarks. Entire-library sync follows
+              New-only sync stops after one page of known bookmarks. Entire-library sync follows
               every X continuation token using the reliable 50-item page size. New bookmarks are
               automatically organized from local content after either sync completes.
             </p>

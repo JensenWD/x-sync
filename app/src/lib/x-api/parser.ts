@@ -72,6 +72,15 @@ function mediaFor(tweet: JsonObject, media: Map<string, JsonObject>) {
     .map(mediaItem);
 }
 
+function matchedMediaNotes(tweet: JsonObject) {
+  return objectArray(tweet.matched_media_notes)
+    .map((note) => ({
+      note_id: asString(note.note_id),
+      match_status: asString(note.match_status),
+    }))
+    .filter((note): note is { note_id: string; match_status: string | null } => Boolean(note.note_id));
+}
+
 /**
  * Resolves every `t.co` in a post back to its destination. A long post carries
  * its own entity set alongside the truncated one, so both are merged; the two
@@ -110,37 +119,38 @@ function tweetLinks(tweet: JsonObject, quotedId: string | null): XBookmarkLink[]
   return links;
 }
 
-function quotedTweetId(tweet: JsonObject) {
+function referencedTweetId(tweet: JsonObject, type: 'quoted' | 'replied_to') {
   const reference = objectArray(tweet.referenced_tweets).find(
-    (item) => asString(item.type) === 'quoted',
+    (item) => asString(item.type) === type,
   );
   return asString(reference?.id);
 }
 
-function quotedTweet(
-  quotedId: string | null,
+function referencedTweet(
+  referencedId: string | null,
   tweets: Map<string, JsonObject>,
   users: Map<string, JsonObject>,
   media: Map<string, JsonObject>,
 ) {
-  const quoted = quotedId ? tweets.get(quotedId) : undefined;
-  if (!quotedId || !quoted) return null;
+  const referenced = referencedId ? tweets.get(referencedId) : undefined;
+  if (!referencedId || !referenced) return null;
 
-  const author = users.get(asString(quoted.author_id) ?? '');
+  const author = users.get(asString(referenced.author_id) ?? '');
   const authorHandle = asString(author?.username) ?? '';
   return {
-    tweet_id: quotedId,
-    full_text: fullText(quoted),
+    tweet_id: referencedId,
+    full_text: fullText(referenced),
     author_name: asString(author?.name) ?? '',
     author_handle: authorHandle,
     author_avatar: asString(author?.profile_image_url),
     tweet_url: authorHandle
-      ? `https://x.com/${authorHandle}/status/${quotedId}`
-      : `https://x.com/i/web/status/${quotedId}`,
-    created_at: asString(quoted.created_at),
-    media: mediaFor(quoted, media),
+      ? `https://x.com/${authorHandle}/status/${referencedId}`
+      : `https://x.com/i/web/status/${referencedId}`,
+    created_at: asString(referenced.created_at),
+    media: mediaFor(referenced, media),
+    matched_media_notes: matchedMediaNotes(referenced),
     // The quote card renders this text too, so it needs its own resolved links.
-    links: tweetLinks(quoted, null),
+    links: tweetLinks(referenced, null),
   };
 }
 
@@ -182,8 +192,11 @@ export function parseOfficialBookmarkPage(payload: unknown): ParsedTimelinePage 
     ] as string[];
     const createdAt = asString(tweet.created_at);
     const createdAtMs = createdAt ? Date.parse(createdAt) : Number.NaN;
-    const quotedId = quotedTweetId(tweet);
-    const quote = quotedTweet(quotedId, includedTweets, users, media);
+    const quotedId = referencedTweetId(tweet, 'quoted');
+    const repliedToId = referencedTweetId(tweet, 'replied_to');
+    const quote = referencedTweet(quotedId, includedTweets, users, media);
+    const reply = referencedTweet(repliedToId, includedTweets, users, media);
+    const noteMatches = matchedMediaNotes(tweet);
     const links = tweetLinks(tweet, quotedId);
     const metrics = asObject(tweet.public_metrics);
 
@@ -199,6 +212,8 @@ export function parseOfficialBookmarkPage(payload: unknown): ParsedTimelinePage 
       mediaUrls: mediaUrls.length > 0 ? JSON.stringify(mediaUrls) : null,
       mediaMetadata: mediaItems.length > 0 ? JSON.stringify(mediaItems) : null,
       quotedTweet: quote ? JSON.stringify(quote) : null,
+      repliedToTweet: reply ? JSON.stringify(reply) : null,
+      matchedMediaNotes: noteMatches.length > 0 ? JSON.stringify(noteMatches) : null,
       tweetCreatedAt: Number.isFinite(createdAtMs) ? Math.floor(createdAtMs / 1000) : null,
       links: links.length > 0 ? JSON.stringify(links) : null,
       conversationId: asString(tweet.conversation_id),

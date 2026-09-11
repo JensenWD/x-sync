@@ -14,6 +14,8 @@ The Next.js server listens on loopback only. Tailscale Serve owns Tailnet HTTPS 
 
 Agents can search the local bookmark library without calling X or reading SQLite directly. The API returns bookmark text, typed media metadata, quoted tweets, folders, tags, enrichment data, content hashes, a stable library revision, and score provenance.
 
+Quote posts and true reply parents are expanded by the same paid bookmark request and stored with their full long-form text, author, media, and links. Helpful Community Notes are enriched separately from X's free public daily data snapshot and returned for the bookmark plus its quoted/replied-to context. The public data is delayed by X and is therefore eventually current rather than real-time.
+
 - Query endpoint: `GET` or `POST /api/agent/bookmarks`
 - Machine-readable contract and current folder/tag facets: `GET /api/agent/bookmarks/schema`
 - Semantic/hybrid query with caller-supplied embeddings: `POST /api/agent/bookmarks/semantic`
@@ -59,7 +61,7 @@ The app intentionally has no application authentication because it is a single-u
 ## Sync behavior
 
 - `auto`: full sync on an empty database or when the last full reconciliation is at least seven days old; incremental otherwise.
-- `incremental`: scans from the newest page until it reaches two completely known pages.
+- `incremental`: scans from the newest page until it reaches one completely known page.
 - `full`: creates a verified backup, scans to the end, then archives local rows no longer present on X.
 
 The official API importer requests the reliable 50-item page size and records each page in a durable SQLite run. Ordering is promoted only when a run succeeds. A suspicious count collapse or skipped-item spike is quarantined without archiving anything; the same full result must be observed twice within 24 hours before reconciliation proceeds. OAuth reconnects are bound to the existing X user ID, and network calls use deadlines with bounded retries. Full reconciliation never hard-deletes bookmarks, tags, or folder associations. Local removal writes a hide tombstone that later syncs do not clear. The former browser extension is parked as a fallback and is not part of the normal workflow.
@@ -72,6 +74,18 @@ npm run db:migrate
 ```
 
 `db:migrate` refuses to create a missing database, verifies integrity, makes a timestamped online backup under `data/backups/`, applies migrations, and verifies integrity/foreign keys/FTS parity again. FTS tables and triggers are versioned migrations rather than setup-only side effects. `db:setup` also refuses to create a missing database. Use `npm run db:init` only for an intentional brand-new database.
+
+## Community Notes cache
+
+Every successful incremental or full X sync checks the local Community Notes cache. A changed set of bookmark/reference IDs is rejoined against cached files without another download. At most once every six hours, the app checks for a newer public snapshot; unchanged shards are reused by ETag and changed ZIPs are downloaded atomically, integrity-tested, and kept private under `data/community-notes/`. Only notes relevant to active local bookmarks are retained in SQLite, and only `CURRENTLY_RATED_HELPFUL` notes are displayed.
+
+Manual refresh and verification:
+
+```bash
+npm run community-notes:refresh -- --force
+```
+
+The first refresh is large because X's cumulative notes and status archives must be cached. Later refreshes reuse unchanged shards. A Notes failure is reported in the sync result but never rolls back an otherwise successful bookmark sync.
 
 Operational health is available at `GET /api/health`.
 

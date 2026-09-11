@@ -11,7 +11,7 @@ export function bookmarkRequestUrl(userId: string, cursor: string | null) {
   // usefully store rather than going back to X for it later.
   url.searchParams.set(
     'tweet.fields',
-    'attachments,author_id,conversation_id,created_at,entities,note_tweet,public_metrics,referenced_tweets',
+    'attachments,author_id,conversation_id,created_at,entities,matched_media_notes,note_tweet,public_metrics,referenced_tweets',
   );
   url.searchParams.set(
     'expansions',

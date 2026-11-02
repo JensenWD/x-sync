@@ -52,9 +52,9 @@ Two ingestion front-ends share one durable state machine:
 - `src/lib/x-api/*` — the official OAuth2 Bookmarks API path (`sync.ts` drives pagination, `oauth.ts` + `token-crypto.ts` + `account-binding.ts` hold credentials, `parser.ts` normalizes payloads, `bookmark-request.ts` pins the 50-item page size).
 - `src/lib/x-sync/*` — the shared engine. `store.ts` (`BookmarkSyncStore`) owns every write: run start/mode resolution, per-page recording, completion, quarantine, failure. `service.ts` is the orchestration layer, `parser.ts` handles the extension's GraphQL timeline shape, `types.ts` is the contract. `src/lib/x-bookmark-service.ts` is only a compatibility re-export barrel.
 
-`POST /api/x/sync` is the single entry point, dispatching on `action`: `official` (server-driven X API sync), or `start`/`page`/`fail` (extension uploads pages into a server-owned run). Page uploads are idempotent by `(run_id, cursor)`; interrupted full runs never archive.
+`POST /api/x/sync` is the single entry point, dispatching on `action`: `official` (queues server-driven X API sync), `organize` (queues local-only organization), or `start`/`page`/`fail` (extension uploads pages into a server-owned run). Official/organization requests return 202 with a persisted `job`, not a completed `run`. `sync-jobs.ts` serializes and request-hash-binds the queue; `sync-job-runner.ts` owns phase checkpoints; supervised `scripts/sync-worker.ts` is independent of web requests. Worker recovery never automatically replays an uncertain X import. `GET /api/sync/status` includes persisted phase/progress/result/error data. Page uploads are idempotent by `(run_id, cursor)`; interrupted full runs never archive.
 
-Invariants to preserve when touching sync: 50-item pages only; incremental stops after two fully-known pages; full mode takes a verified backup first, archives rather than deletes, and requires a matching SHA-256 fingerprint + count confirmation observed twice within 24h before reconciling; suspicious count collapse quarantines the run; local removal writes a hide tombstone later syncs must not clear.
+Invariants to preserve when touching sync: 50-item pages only; incremental stops after one completely known page; full mode takes a verified backup first, archives rather than deletes, and requires a matching SHA-256 fingerprint + count confirmation observed twice within 24h before reconciling; suspicious count collapse quarantines the run; local removal writes a hide tombstone later syncs must not clear.
 
 ### Agent API surface
 Local-only, no X credits: `/api/agent/bookmarks` (+ `/schema`, `/semantic`), `/api/agent/enrichments`, `/api/agent/taxonomy/{schema,proposals,review,apply,rollback}`.
@@ -79,4 +79,4 @@ The layout follows the Claude Design redesign: desktop is direction **2a** (no s
 
 ## Deployment shape
 
-Single-user Tailnet service: Next listens on loopback, Tailscale Serve provides HTTPS, LaunchAgent `com.johnny.x-sync`. There is intentionally no application auth — a deployment assumption, not license to bypass proposal/concurrency/rollback safeguards.
+Single-user Tailnet service: Next listens on loopback, Tailscale Serve provides HTTPS, LaunchAgents `com.johnny.x-sync` (web) and `com.johnny.x-sync-worker` (explicitly queued work only; no speculative X sync). See `app/README.md` Background sync for launchd, release-build, backup, recovery and rollback instructions. There is intentionally no application auth — a deployment assumption, not license to bypass proposal/concurrency/rollback safeguards.

@@ -63,18 +63,25 @@ export function LibraryTopBar() {
   const age = syncStatus?.last_synced_at ? compactAge(syncStatus.last_synced_at) : null;
   const avatarInitial = connection?.username?.[0]?.toUpperCase() ?? null;
 
-  const syncLabel = syncing ? 'Syncing…' : age ? `Synced ${age}` : 'Never synced';
+  const job = syncStatus?.job;
+  const syncLabel = syncing
+    ? job?.status === 'queued' ? 'Queued…' : job?.stage === 'organizing' ? 'Organizing…'
+      : job?.stage === 'notes' ? 'Refreshing notes…' : 'Syncing…'
+    : job?.status === 'failed' ? 'Sync needs attention'
+      : job?.status === 'partial' ? 'Organization needs attention'
+        : age ? `Synced ${age}` : 'Never synced';
 
   const account = (
     <button
       type="button"
       onClick={() => setSyncOpen(true)}
-      title="Sync bookmarks"
+      title={syncing ? `${syncLabel} Safe to leave; running on AgentMac.` : "Sync bookmarks"}
+      aria-label={`Sync bookmarks: ${syncLabel}`}
       className="flex items-center gap-3 text-text-secondary transition-colors hover:text-text-primary md:gap-[18px] md:text-text-tertiary"
     >
       {syncing && <Loader2 className="size-3.5 animate-spin" />}
       <span className="hidden text-[13px] md:inline">{syncLabel}</span>
-      <span className="font-mono text-[11px] text-muted-foreground md:hidden">{age ?? '—'}</span>
+      <span className="max-w-36 text-right font-mono text-[11px] text-muted-foreground md:hidden">{syncLabel}</span>
       <span className="flex size-8 items-center justify-center rounded-full bg-[#232326] text-[11px] font-medium text-text-secondary md:size-[26px] md:text-[10px]">
         {avatarInitial}
       </span>

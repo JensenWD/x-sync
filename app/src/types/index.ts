@@ -107,6 +107,7 @@ export interface BookmarksResponse {
 }
 
 export interface SyncStatus {
+  job: SyncJob | null;
   in_progress: boolean;
   last_synced_at: number | null;
   last_full_synced_at: number | null;
@@ -116,11 +117,29 @@ export interface SyncStatus {
   last_run: SyncRun | null;
 }
 
+export interface SyncJob {
+  id: number;
+  status: 'queued' | 'running' | 'success' | 'partial' | 'failed';
+  stage: 'importing' | 'notes' | 'organizing' | 'complete';
+  sync_run_id: number | null;
+  progress_done: number;
+  progress_total: number;
+  created_at: number;
+  updated_at: number;
+  error_code: string | null;
+  error_message: string | null;
+  error_details: {
+    baseline_count: number; observed_count: number; archive_count: number;
+    reconciliation_confirmation: { fingerprint: string; observed_count: number };
+  } | null;
+  result: { sync: SyncRun | null; auto_tag: SyncRun['auto_tag'] | null; community_notes?: unknown } | null;
+}
+
 export interface SyncRun {
   id: number;
   requested_mode: 'auto' | 'incremental' | 'full';
   mode: 'incremental' | 'full';
-  status: 'running' | 'success' | 'failed';
+  status: 'running' | 'success' | 'failed' | 'quarantined';
   started_at: number;
   heartbeat_at: number;
   finished_at: number | null;

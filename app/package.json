@@ -13,6 +13,7 @@
     "db:setup": "npx tsx scripts/db-setup.ts",
     "db:init": "npx tsx scripts/db-setup.ts --create",
     "db:studio": "drizzle-kit studio",
+    "sync:worker": "node --conditions=react-server --import tsx scripts/sync-worker.ts",
     "autotag:run": "tsx scripts/auto-tag-run.ts",
     "community-notes:refresh": "tsx scripts/community-notes-refresh.ts"
   },

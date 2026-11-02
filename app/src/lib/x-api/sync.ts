@@ -16,8 +16,6 @@ import {
 import { fetchWithDeadline } from './fetch';
 import { createVerifiedDatabaseBackup } from '@/lib/db/backup';
 import { rawDb } from '@/lib/db/client';
-import { autoTagMissingBookmarks, failedAutoTagResult } from '@/lib/auto-tag';
-import { refreshCommunityNotes } from '@/lib/community-notes/cache';
 
 class XApiRequestError extends Error {
   constructor(
@@ -76,10 +74,15 @@ async function fetchPage(userId: string, cursor: string | null, accessToken: str
 export async function syncOfficialBookmarks(
   requestedMode: SyncMode,
   reconciliationConfirmation: ReconciliationConfirmation | null = null,
+  onStart: (runId: number) => void = () => {},
 ) {
   const userId = getConnectedXUserId();
   let accessToken = await getValidXAccessToken();
-  const run = startBrowserSync(requestedMode);
+  const run = rawDb.transaction(() => {
+    const started = startBrowserSync(requestedMode);
+    onStart(started.id);
+    return started;
+  }).immediate();
   let cursor: string | null = null;
 
   try {
@@ -95,32 +98,7 @@ export async function syncOfficialBookmarks(
       }
 
       const result = ingestParsedPage(run.id, cursor, page, reconciliationConfirmation);
-      if (result.status === 'success') {
-        let communityNotes: Awaited<ReturnType<typeof refreshCommunityNotes>>;
-        try {
-          communityNotes = await refreshCommunityNotes(rawDb);
-        } catch (error) {
-          communityNotes = {
-            status: 'failed',
-            snapshot_date: null,
-            notes_imported: 0,
-            helpful_notes: 0,
-            downloaded_files: 0,
-            reused_files: 0,
-            error: error instanceof Error ? error.message : 'Community Notes refresh failed',
-          };
-        }
-        try {
-          const autoTag = await autoTagMissingBookmarks(rawDb);
-          return { ...result.run, auto_tag: autoTag, community_notes: communityNotes };
-        } catch (error) {
-          return {
-            ...result.run,
-            auto_tag: failedAutoTagResult(error),
-            community_notes: communityNotes,
-          };
-        }
-      }
+      if (result.status === 'success') return result.run;
       cursor = result.cursor;
     }
   } catch (error) {

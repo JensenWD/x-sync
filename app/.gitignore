@@ -47,3 +47,5 @@ next-env.d.ts
 /data/*.db-wal
 /data/backups/
 /data/community-notes/
+
+/data/sync-worker/

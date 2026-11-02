@@ -708,6 +708,7 @@ function verifyBookmarkFolder(sqlite: Database.Database, bookmarkId: number) {
 export async function autoTagMissingBookmarks(
   sqlite: Database.Database,
   runner: AutoTagModelRunner = runOpenClawAutoTagModel,
+  onProgress: (done: number, total: number) => void = () => {},
 ): Promise<AutoTagResult> {
   const pending = pendingBookmarks(sqlite);
   if (pending.length === 0) {
@@ -720,6 +721,7 @@ export async function autoTagMissingBookmarks(
       error: null,
     };
   }
+  onProgress(0, pending.length);
   const controlled = taxonomy(sqlite);
   const version = taxonomyVersion(controlled.folders, controlled.tags);
   const classified = new Map<number, Classification>();
@@ -744,42 +746,38 @@ export async function autoTagMissingBookmarks(
     }
   }
 
+  let assignments = 0;
+  let tagged = 0;
+  const apply = (bookmarks: BookmarkRow[]) => {
+    for (const bookmark of bookmarks) {
+      const key = runKey(bookmark, version);
+      const priorRun = existingRun(sqlite, key);
+      if (priorRun) {
+        assignments += resumeProposalRun(sqlite, priorRun.id);
+      } else {
+        const classification = classified.get(bookmark.id);
+        if (!classification) throw new Error(`Auto-tag classification is missing bookmark ${bookmark.id}`);
+        assignments += applyClassification(sqlite, bookmark, classification, controlled.folders, controlled.tags, version);
+      }
+      verifyBookmarkFolder(sqlite, bookmark.id);
+      tagged += 1;
+      onProgress(tagged, pending.length);
+    }
+  };
+  // Commit each audited batch before asking the model for the next one. A worker
+  // restart resumes only still-unfoldered items, not the paid X import.
+  const needsModelIds = new Set(needsModel.map((row) => row.id));
+  apply(pending.filter((row) => !needsModelIds.has(row.id)));
   const referenceCorpus = corpus(sqlite, new Set(pending.map((bookmark) => bookmark.id)));
   for (let index = 0; index < needsModel.length; index += CLASSIFIER_BATCH_SIZE) {
     const batch = needsModel.slice(index, index + CLASSIFIER_BATCH_SIZE);
-    const examples = selectExamples(batch, referenceCorpus);
-    const results = await classifyBatch(
-      batch,
-      controlled.folders,
-      controlled.tags,
-      examples,
-      runner,
-    );
+    const results = await classifyBatch(batch, controlled.folders, controlled.tags,
+      selectExamples(batch, referenceCorpus), runner);
     for (const result of results) {
       classified.set(result.bookmark_id, result);
       models.add(result.model);
     }
-  }
-
-  let assignments = 0;
-  for (const bookmark of pending) {
-    const key = runKey(bookmark, version);
-    const priorRun = existingRun(sqlite, key);
-    if (priorRun) {
-      assignments += resumeProposalRun(sqlite, priorRun.id);
-    } else {
-      const classification = classified.get(bookmark.id);
-      if (!classification) throw new Error(`Auto-tag classification is missing bookmark ${bookmark.id}`);
-      assignments += applyClassification(
-        sqlite,
-        bookmark,
-        classification,
-        controlled.folders,
-        controlled.tags,
-        version,
-      );
-    }
-    verifyBookmarkFolder(sqlite, bookmark.id);
+    apply(batch);
   }
 
   return {

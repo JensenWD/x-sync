@@ -504,3 +504,35 @@ test('semantic search fails closed when the eligible set exceeds its in-memory c
   );
   sqlite.close();
 });
+
+test('organization checkpoints completed batches before a later model failure, then retries only remaining bookmarks', async () => {
+  const sqlite = createDatabase();
+  sqlite.exec(`INSERT INTO folders (id, name) VALUES (1, 'AI & Software'), (2, 'Video'), (3, 'Undetermined');
+    INSERT INTO bookmark_folders (bookmark_id, folder_id) VALUES (2, 1);`);
+  const insert = sqlite.prepare(`INSERT INTO bookmarks (id, tweet_id, full_text, author_name, author_handle, tweet_url)
+    VALUES (?, ?, 'Local AI agents', 'Fictional QA', 'fixture', 'https://x.com/fixture/status/1')`);
+  for (let id = 3; id <= 23; id++) insert.run(id, String(id * 100));
+  const model = async (prompt: string) => {
+    const data = JSON.parse(prompt.split('CLASSIFICATION_DATA:\n')[1]);
+    return { model: 'test/checkpoints', text: JSON.stringify({ classifications: data.bookmarks_to_classify.map((row: { bookmark_id: number }) => ({
+      bookmark_id: row.bookmark_id, folder: 'AI & Software', tags: [], confidence: 0.9, rationale: 'Explicit AI subject.',
+    })) }) };
+  };
+  let calls = 0;
+  const progress: number[] = [];
+  await assert.rejects(autoTagMissingBookmarks(sqlite, async (prompt) => {
+    if (++calls === 2) throw new Error('Simulated interruption after first batch');
+    return model(prompt);
+  }, (done) => progress.push(done)), /Simulated interruption/);
+  assert.equal(progress.at(-1), 20);
+  assert.equal((sqlite.prepare('SELECT COUNT(*) AS n FROM bookmark_folders').get() as { n: number }).n, 21);
+  let remaining = 0;
+  const resumed = await autoTagMissingBookmarks(sqlite, async (prompt) => {
+    remaining = JSON.parse(prompt.split('CLASSIFICATION_DATA:\n')[1]).bookmarks_to_classify.length;
+    return model(prompt);
+  });
+  assert.equal(remaining, 2);
+  assert.equal(resumed.tagged, 2);
+  assert.equal((sqlite.prepare('SELECT COUNT(*) AS n FROM bookmark_folders').get() as { n: number }).n, 23);
+  sqlite.close();
+});

@@ -18,6 +18,25 @@ const timestamps = {
     .default(sql`(unixepoch())`),
 };
 
+export const syncJobs = sqliteTable('sync_jobs', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  requestId: text('request_id').notNull().unique(),
+  requestHash: text('request_hash').notNull(),
+  inputJson: text('input_json').notNull(),
+  status: text('status').notNull(),
+  stage: text('stage').notNull(),
+  owner: text('owner'),
+  syncRunId: integer('sync_run_id'),
+  progressDone: integer('progress_done').notNull().default(0),
+  progressTotal: integer('progress_total').notNull().default(0),
+  resultJson: text('result_json'),
+  errorCode: text('error_code'),
+  errorMessage: text('error_message'),
+  errorDetailsJson: text('error_details_json'),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+}, (t) => [uniqueIndex('sync_jobs_one_active').on(sql`(1)`).where(sql`${t.status} IN ('queued', 'running')`)]);
+
 export const bookmarks = sqliteTable(
   'bookmarks',
   {

@@ -7,7 +7,8 @@ import {
   SyncRunNotFoundError,
   type SyncMode,
 } from '@/lib/x-bookmark-service';
-import { syncOfficialBookmarks } from '@/lib/x-api/sync';
+import { enqueueSyncJob } from '@/lib/sync-job-service';
+import { randomUUID } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import type { ReconciliationConfirmation } from '@/lib/x-sync/types';
 
@@ -92,10 +93,19 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    if (action === 'official') {
-      const requestedMode = body.mode ?? 'auto';
+    if (action === 'official' || action === 'organize') {
+      const unknown = Object.keys(body).find((key) => !['action', 'mode', 'reconciliation_confirmation', 'request_id'].includes(key));
+      if (unknown) return json({ status: 'error', error: `Unknown field: ${unknown}` }, 400);
+      const requestId = body.request_id ?? randomUUID();
+      if (typeof requestId !== 'string' || !/^[a-zA-Z0-9_-]{16,100}$/u.test(requestId)) {
+        return json({ status: 'error', error: 'Invalid request_id' }, 400);
+      }
+      const requestedMode = body.mode ?? 'incremental';
       if (typeof requestedMode !== 'string' || !MODES.has(requestedMode as SyncMode)) {
         return json({ status: 'error', error: 'mode must be auto, incremental, or full' }, 400);
+      }
+      if (action === 'organize' && requestedMode !== 'incremental') {
+        return json({ status: 'error', error: 'Organization-only jobs require incremental mode' }, 400);
       }
       let confirmation: ReconciliationConfirmation | null;
       try {
@@ -106,14 +116,15 @@ export async function POST(req: NextRequest) {
           400,
         );
       }
-      if (confirmation && requestedMode !== 'full') {
+      if (confirmation && (requestedMode !== 'full' || action !== 'official')) {
         return json(
           { status: 'error', error: 'reconciliation_confirmation is only valid for full sync' },
           400,
         );
       }
-      const run = await syncOfficialBookmarks(requestedMode as SyncMode, confirmation);
-      return json({ status: 'success', run });
+      const job = enqueueSyncJob(requestId, { action, mode: requestedMode as SyncMode,
+        reconciliation_confirmation: confirmation });
+      return json({ status: 'accepted', job }, 202);
     }
 
     if (action === 'start') {

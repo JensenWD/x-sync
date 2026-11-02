@@ -64,6 +64,13 @@
       "when": 1787880923211,
       "tag": "0008_lazy_stark_industries",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1793595611305,
+      "tag": "0009_background_sync",
+      "breakpoints": true
     }
   ]
 }
